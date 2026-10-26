@@ -1,11 +1,15 @@
 import Phaser from 'phaser';
 import GameScene from './scenes/GameScene.js';
+import { pickCanvasSize } from './layout.js';
+
+// 触控设备（手机/平板）用竖屏 720×1280，底部留拇指摇杆区；桌面 1024×640
+const size = pickCanvasSize();
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
-  width: 1024,
-  height: 640,
+  width: size.width,
+  height: size.height,
   backgroundColor: '#f4f1e8',
   physics: {
     default: 'arcade',
