@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import TitleScene from './scenes/TitleScene.js';
 import GameScene from './scenes/GameScene.js';
 
 // 横屏全屏：逻辑高度固定 640（保持原设计的视野/HUD/升级卡比例），
@@ -29,7 +30,7 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [GameScene],
+  scene: [TitleScene, GameScene], // 先开局引导页，再进游戏
 });
 
 // 视口变化（地址栏收起/展开、旋转）时按新宽高比改逻辑宽度；场景监听 scale resize 重排 HUD/摇杆
