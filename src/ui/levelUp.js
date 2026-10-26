@@ -1,8 +1,9 @@
 import { EMOJI_FONT, FONT } from '../textures.js';
+import { isTouchDevice } from './virtualJoystick.js';
 
-const CARD_W = 168;
+const BASE_CARD_W = 168;
 const CARD_H = 260;
-const GAP = 14;
+const BASE_GAP = 14;
 const NEED = 2;
 
 const levelTag = (c) => (c.kind === 'food' ? '' : c.lv === 0 ? '新！' : `Lv ${c.lv} → ${c.lv + 1}`);
@@ -10,6 +11,12 @@ const levelTag = (c) => (c.kind === 'food' ? '' : c.lv === 0 ? '新！' : `Lv ${
 // 升级面板：5 选 2。点选或按 1–5 切换选中，满 2 项后回调 onPick(selected[])
 export function showLevelUp(scene, level, choices, onPick) {
   const { width, height } = scene.scale;
+  const n = Math.max(1, choices.length);
+  // 横屏保持一排；窄屏缩小间距与卡宽，保证不溢出（左右各留 20px）
+  const GAP = width < 900 ? 8 : BASE_GAP;
+  const CARD_W = Math.min(BASE_CARD_W, Math.floor((width - 40 - (n - 1) * GAP) / n));
+  const touch = isTouchDevice();
+  const hintLabel = (k) => (touch ? `点选 ${NEED} 项 · 已选 ${k}/${NEED}` : `选 ${NEED} 项（点击或按 1–5）· 已选 ${k}/${NEED}`);
   const parts = [];
   const fixed = (obj) => {
     parts.push(obj);
@@ -18,7 +25,7 @@ export function showLevelUp(scene, level, choices, onPick) {
 
   fixed(scene.add.rectangle(0, 0, width, height, 0x000000, 0.55).setOrigin(0).setInteractive());
   fixed(scene.add.text(width / 2, 72, `升级！Lv ${level}`, { fontFamily: FONT, fontSize: '40px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5));
-  const hint = fixed(scene.add.text(width / 2, 118, `选 2 项（点击或按 1–5）· 已选 0/${NEED}`, {
+  const hint = fixed(scene.add.text(width / 2, 118, hintLabel(0), {
     fontFamily: FONT, fontSize: '18px', color: '#dddddd',
   }).setOrigin(0.5));
 
@@ -38,7 +45,7 @@ export function showLevelUp(scene, level, choices, onPick) {
     onPick(picked);
   };
   const refreshHint = () => {
-    hint.setText(`选 2 项（点击或按 1–5）· 已选 ${selected.length}/${NEED}`);
+    hint.setText(hintLabel(selected.length));
   };
   const paint = (card, on) => {
     if (on) card.rect.setFillStyle(0xfff1b8).setStrokeStyle(5, 0xe65100);

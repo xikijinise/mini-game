@@ -8,6 +8,7 @@ import { WEAPONS, WEAPON_MAX_LEVEL } from '../data/weapons.js';
 import { STAT_BOOSTS, WEAPON_OVER } from '../data/statBoosts.js';
 import { PASSIVES } from '../data/passives.js';
 import { showLevelUp } from '../ui/levelUp.js';
+import { createVirtualJoystick, createPauseButton, isTouchDevice } from '../ui/virtualJoystick.js';
 import { spawnIntervalMs, spawnCount, clampSpawnCount } from '../data/waves.js';
 import { preloadObstacles, placeObstacles, bushFactor, nearHardObstacle, ySortDepth } from '../systems/obstacles.js';
 
@@ -89,6 +90,7 @@ export default class GameScene extends Phaser.Scene {
     this.spikes = []; // { x, y, r, dmg, hitAt, dieAt, warn, img, hit:Set }
 
     const { width, height } = this.scale;
+    this.playH = height;
     this.bg = this.add.tileSprite(0, 0, width + 128, height + 128, 'grid').setDepth(-10);
     this.aura = this.add.image(0, 0, 'aura').setDepth(1).setVisible(false);
     this.player = this.physics.add.sprite(0, 0, 'stick0').setDepth(10);
@@ -114,13 +116,29 @@ export default class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.arrows, this.enemies, this.onArrowHit, null, this);
     this.physics.add.overlap(this.player, this.enemies, this.onPlayerHit, null, this);
 
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.wasd = this.input.keyboard.addKeys('W,A,S,D');
-    this.input.keyboard.on('keydown-ESC', this.onEsc, this);
-    this.events.once('shutdown', () => this.input.keyboard.off('keydown-ESC', this.onEsc, this));
+    // 部分移动浏览器 keyboard 插件可能不可用，判空
+    const kb = this.input.keyboard;
+    this.cursors = kb ? kb.createCursorKeys() : null;
+    this.wasd = kb ? kb.addKeys('W,A,S,D') : null;
+    if (kb) {
+      kb.on('keydown-ESC', this.onEsc, this);
+      this.events.once('shutdown', () => kb.off('keydown-ESC', this.onEsc, this));
+    }
 
     this.createHud();
-    const hint = this.add.text(width / 2, height - 60, 'WASD / 方向键移动 · 自动攻击 · 捡晶体升级', { ...HUD_FONT, fontSize: '22px' })
+
+    // 手机/平板横屏：左半屏下部浮动摇杆 + 右上暂停按钮；桌面无触控时不显示
+    this.isTouch = isTouchDevice();
+    this.joystick = null;
+    this.pauseBtn = null;
+    if (this.isTouch) {
+      this.input.addPointer(2); // 多点触控：按住摇杆时还能点暂停/升级卡
+      this.joystick = createVirtualJoystick(this, { depth: 950 });
+      this.pauseBtn = createPauseButton(this, () => this.onEsc(), { depth: 950 });
+    }
+
+    const hintText = this.isTouch ? '左下摇杆移动 · 自动攻击 · 捡晶体升级' : 'WASD / 方向键移动 · 自动攻击 · 捡晶体升级';
+    const hint = this.add.text(width / 2, this.playH - 60, hintText, { ...HUD_FONT, fontSize: '22px' })
       .setOrigin(0.5).setScrollFactor(0).setDepth(100);
     this.tweens.add({ targets: hint, alpha: 0, delay: 4000, duration: 800, onComplete: () => hint.destroy() });
 
@@ -184,8 +202,20 @@ export default class GameScene extends Phaser.Scene {
   movePlayer() {
     const c = this.cursors;
     const k = this.wasd;
-    const x = (c.right.isDown || k.D.isDown ? 1 : 0) - (c.left.isDown || k.A.isDown ? 1 : 0);
-    const y = (c.down.isDown || k.S.isDown ? 1 : 0) - (c.up.isDown || k.W.isDown ? 1 : 0);
+    const down = (key) => !!(key && key.isDown);
+    let x = 0;
+    let y = 0;
+    if (c && k) {
+      x = (down(c.right) || down(k.D) ? 1 : 0) - (down(c.left) || down(k.A) ? 1 : 0);
+      y = (down(c.down) || down(k.S) ? 1 : 0) - (down(c.up) || down(k.W) ? 1 : 0);
+    }
+    // 键盘 + 摇杆矢量相加后归一化，任一非零即移动
+    if (this.joystick) {
+      x += this.joystick.vector.x;
+      y += this.joystick.vector.y;
+      if (Math.abs(x) < 1e-3) x = 0;
+      if (Math.abs(y) < 1e-3) y = 0;
+    }
     const dir = new Phaser.Math.Vector2(x, y).normalize();
     const p = this.player;
     const footY = p.y + p.displayHeight / 2;
@@ -1309,17 +1339,27 @@ export default class GameScene extends Phaser.Scene {
       if (this.paused) return;
       const { width, height } = this.scale;
       const fixed = (obj) => obj.setScrollFactor(0).setDepth(1500);
+      const mask = fixed(this.add.rectangle(0, 0, width, height, 0x000000, 0.5).setOrigin(0));
       this.pauseLayer = [
-        fixed(this.add.rectangle(0, 0, width, height, 0x000000, 0.5).setOrigin(0)),
-        fixed(this.add.text(width / 2, height / 2 - 30, '暂停', { fontFamily: FONT, fontSize: '56px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5)),
-        fixed(this.add.text(width / 2, height / 2 + 40, 'Esc 继续', { fontFamily: FONT, fontSize: '24px', color: '#ffd54f' }).setOrigin(0.5)),
+        mask,
+        fixed(this.add.text(width / 2, this.playH / 2 - 30, '暂停', { fontFamily: FONT, fontSize: '56px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5)),
+        fixed(this.add.text(width / 2, this.playH / 2 + 40, this.isTouch ? '点屏幕继续' : 'Esc 继续', { fontFamily: FONT, fontSize: '24px', color: '#ffd54f' }).setOrigin(0.5)),
       ];
+      if (this.isTouch) {
+        // 点遮罩继续；忽略打开后 200ms 内的点击，避免同一下触摸立刻关掉
+        const openedAt = this.time.now;
+        mask.setInteractive().on('pointerdown', () => {
+          if (this.time.now - openedAt < 200) return;
+          if (this.pauseLayer) this.onEsc();
+        });
+      }
       this.setPaused(true);
     }
   }
 
   setPaused(paused) {
     this.paused = paused;
+    if (this.joystick) this.joystick.setEnabled(!paused); // 暂停/升级时禁用摇杆并归零
     if (paused) {
       this.physics.pause();
       this.tweens.pauseAll();
@@ -1489,8 +1529,10 @@ export default class GameScene extends Phaser.Scene {
 
     const { width, height } = this.scale;
     const fixed = (obj) => obj.setScrollFactor(0).setDepth(1000);
-    const line = (y, text, size, color = '#ffffff', bold = false) => fixed(this.add.text(width / 2, height / 2 + y, text, {
+    const cy = height / 2;
+    const line = (y, text, size, color = '#ffffff', bold = false) => fixed(this.add.text(width / 2, cy + y, text, {
       fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal',
+      align: 'center', wordWrap: { width: width - 40, useAdvancedWrap: true },
     }).setOrigin(0.5));
     fixed(this.add.rectangle(0, 0, width, height, 0x000000, 0.6).setOrigin(0));
     line(-140, '你倒下了', 56, '#ffffff', true);
@@ -1498,16 +1540,22 @@ export default class GameScene extends Phaser.Scene {
     line(-28, `最佳存活 ${formatTime(best)}${newBest ? '（新纪录！）' : ''}`, 20, newBest ? '#ffd54f' : '#cccccc');
     line(14, `等级 ${this.level}    击杀 ${this.kills}    Boss 击杀 ${this.bossKills}`, 24);
     line(54, `物种最高星：${tierLine}`, 22, '#ffcc80');
-    line(110, '点击或按空格重新开始', 22, '#ffd54f');
+    line(110, this.isTouch ? '点屏幕重新开始' : '点击或按空格重新开始', 22, '#ffd54f');
+    if (this.joystick) this.joystick.setVisible(false);
+    if (this.pauseBtn) this.pauseBtn.setVisible(false);
     const kb = this.input.keyboard;
     const restart = () => {
       this.input.off('pointerdown', restart);
-      kb.off('keydown-SPACE', restart);
-      kb.off('keydown-ENTER', restart);
+      if (kb) {
+        kb.off('keydown-SPACE', restart);
+        kb.off('keydown-ENTER', restart);
+      }
       this.scene.restart();
     };
     this.input.once('pointerdown', restart);
-    kb.once('keydown-SPACE', restart);
-    kb.once('keydown-ENTER', restart);
+    if (kb) {
+      kb.once('keydown-SPACE', restart);
+      kb.once('keydown-ENTER', restart);
+    }
   }
 }
