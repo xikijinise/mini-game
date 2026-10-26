@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#1d1f2b" />
+    <meta name="theme-color" content="#f4f1e8" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,7 +13,7 @@
       html, body {
         margin: 0; padding: 0; width: 100%;
         height: 100%; height: 100dvh;
-        overflow: hidden; background: #1d1f2b;
+        overflow: hidden; background: #f4f1e8;
         touch-action: none; overscroll-behavior: none;
         -webkit-user-select: none; user-select: none;
         -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
@@ -21,11 +21,10 @@
       body { position: fixed; inset: 0; }
       #game {
         width: 100%; height: 100%; height: 100dvh;
-        display: flex; align-items: center; justify-content: center;
-        box-sizing: border-box;
-        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        margin: 0; padding: 0; overflow: hidden;
       }
       canvas { touch-action: none; display: block; }
+      #game canvas { margin: 0 !important; }
       /* 手机竖握时提示横屏（只对粗指针设备；桌面窄窗口不显示） */
       #rotate-hint {
         display: none; position: fixed; inset: 0; z-index: 10;

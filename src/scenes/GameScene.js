@@ -126,6 +126,8 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.createHud();
+    this.scale.on('resize', this.onScaleResize, this);
+    this.events.once('shutdown', () => this.scale.off('resize', this.onScaleResize, this));
 
     // 手机/平板横屏：左半屏下部浮动摇杆 + 右上暂停按钮；桌面无触控时不显示
     this.isTouch = isTouchDevice();
@@ -1375,10 +1377,10 @@ export default class GameScene extends Phaser.Scene {
     const { width } = this.scale;
     const fixed = (obj) => obj.setScrollFactor(0).setDepth(100);
     const { height } = this.scale;
-    fixed(this.add.rectangle(0, 0, width, 24, 0x1c1c1c).setOrigin(0));
+    this.xpBg = fixed(this.add.rectangle(0, 0, width, 24, 0x1c1c1c).setOrigin(0));
     this.xpFill = fixed(this.add.rectangle(0, 0, width, 24, 0x2196f3).setOrigin(0));
     this.xpFill.scaleX = 0;
-    fixed(this.add.rectangle(0, 21, width, 3, 0x000000, 0.35).setOrigin(0)); // 底边阴影，让蓝条更立体
+    this.xpShade = fixed(this.add.rectangle(0, 21, width, 3, 0x000000, 0.35).setOrigin(0)); // 底边阴影，让蓝条更立体
     this.levelText = fixed(this.add.text(14, 30, '', HUD_FONT));
     this.timeText = fixed(this.add.text(width / 2, 30, '', { ...HUD_FONT, fontSize: '26px' }).setOrigin(0.5, 0));
     this.killText = fixed(this.add.text(width - 14, 30, '', HUD_FONT).setOrigin(1, 0));
@@ -1397,6 +1399,11 @@ export default class GameScene extends Phaser.Scene {
 
     // 低血屏幕边缘泛红（持续状态，与 hurtFlash 短闪分开）
     this.lowHpVignette = this.add.graphics().setScrollFactor(0).setDepth(899).setAlpha(0);
+    this.drawVignette(width, height);
+  }
+
+  drawVignette(width, height) {
+    this.lowHpVignette.clear();
     const bands = 14;
     const band = Math.round(Math.min(width, height) * 0.012);
     for (let i = 0; i < bands; i++) {
@@ -1404,6 +1411,30 @@ export default class GameScene extends Phaser.Scene {
       const inset = i * band;
       this.lowHpVignette.lineStyle(band, 0xd50000, a * a)
         .strokeRect(inset + band / 2, inset + band / 2, width - 2 * inset - band, height - 2 * inset - band);
+    }
+  }
+
+  // 视口变化（手机地址栏收起、旋转）后按新逻辑宽高重排固定在屏幕上的 HUD / 摇杆 / 暂停钮
+  onScaleResize(gameSize) {
+    const width = gameSize.width;
+    const height = gameSize.height;
+    this.playH = height;
+    if (this.bg) this.bg.setSize(width + 128, height + 128);
+    if (this.xpBg) this.xpBg.setSize(width, 24);
+    if (this.xpFill) this.xpFill.setSize(width, 24);
+    if (this.xpShade) this.xpShade.setSize(width, 3);
+    if (this.timeText) this.timeText.setX(width / 2);
+    if (this.killText) this.killText.setX(width - 14);
+    if (this.tierText) this.tierText.setX(width - 14);
+    if (this.bossName) this.bossName.setX(width / 2);
+    if (this.hurtFlash) this.hurtFlash.setSize(width, height);
+    if (this.lowHpVignette) this.drawVignette(width, height);
+    if (this.joystick) this.joystick.relayout(width, height);
+    if (this.pauseBtn) this.pauseBtn.setPosition(width - 46, 118);
+    if (this.pauseLayer && this.pauseLayer[0]) {
+      this.pauseLayer[0].setSize(width, height);
+      if (this.pauseLayer[0].input) this.pauseLayer[0].input.hitArea.setTo(0, 0, width, height);
+      this.pauseLayer.slice(1).forEach((o) => o.setX(width / 2));
     }
   }
 

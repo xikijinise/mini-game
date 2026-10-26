@@ -17,10 +17,18 @@ export function isTouchDevice() {
 // 松手回到左下默认位置、方向归零。右半屏与顶栏不抢触摸。
 // 返回 { vector, destroy, setVisible, setEnabled, release }；vector 为归一化方向
 export function createVirtualJoystick(scene, opts = {}) {
-  const { width, height } = scene.scale;
-  const top = opts.top ?? Math.round(height * 0.3); // 顶栏 / 图标条下方才算摇杆区
-  const zone = new Phaser.Geom.Rectangle(0, top, Math.round(width * (opts.widthRatio ?? 0.45)), height - top);
-  const home = { x: opts.x ?? BASE_R + 60, y: opts.y ?? height - BASE_R - 40 };
+  let { width, height } = scene.scale;
+  const zone = new Phaser.Geom.Rectangle(0, 0, 0, 0);
+  const home = { x: 0, y: 0 };
+  const layout = (w, h) => {
+    width = w;
+    height = h;
+    const top = opts.top ?? Math.round(height * 0.3); // 顶栏 / 图标条下方才算摇杆区
+    zone.setTo(0, top, Math.round(width * (opts.widthRatio ?? 0.45)), height - top);
+    home.x = opts.x ?? BASE_R + 60;
+    home.y = opts.y ?? height - BASE_R - 40;
+  };
+  layout(width, height);
   const depth = opts.depth ?? 950;
 
   const base = scene.add.circle(home.x, home.y, BASE_R, 0x000000, 0.18)
@@ -107,6 +115,11 @@ export function createVirtualJoystick(scene, opts = {}) {
     release,
     destroy,
     zone,
+    // 视口尺寸变化时重算摇杆区与默认位置
+    relayout(w, h) {
+      layout(w, h);
+      release();
+    },
     isActive: () => pointerId !== null,
     setVisible(v) {
       visible = v;
@@ -141,6 +154,7 @@ export function createPauseButton(scene, onPress, opts = {}) {
   });
   return {
     destroy() { bg.destroy(); label.destroy(); },
+    setPosition(nx, ny) { bg.setPosition(nx, ny); label.setPosition(nx, ny); },
     setVisible(v) { bg.setVisible(v); label.setVisible(v); },
   };
 }
