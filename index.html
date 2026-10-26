@@ -28,11 +28,22 @@
       /* 手机竖握时提示横屏（只对粗指针设备；桌面窄窗口不显示） */
       #rotate-hint {
         display: none; position: fixed; inset: 0; z-index: 10;
-        background: #1d1f2b; color: #ffffff;
+        background: #f4f1e8; color: #2b2d3a;
         font: bold 22px/1.6 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
         align-items: center; justify-content: center; flex-direction: column; text-align: center;
+        gap: 14px; padding: 24px; box-sizing: border-box;
       }
       #rotate-hint .icon { font-size: 56px; display: inline-block; transform: rotate(90deg); }
+      #rotate-hint .sub { font-size: 14px; font-weight: normal; color: #6b6a63; }
+      #rotate-hint #fs-btn {
+        margin-top: 6px; padding: 12px 28px; border: 0; border-radius: 999px;
+        background: #2b2d3a; color: #f4f1e8;
+        font: bold 18px/1 system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+        box-shadow: 0 3px 10px rgba(43, 45, 58, 0.18); cursor: pointer;
+        touch-action: manipulation;
+      }
+      #rotate-hint #fs-btn:active { transform: scale(0.96); }
+      #rotate-hint #fs-tip { display: none; font-size: 13px; font-weight: normal; color: #8a877c; max-width: 280px; }
       @media (orientation: portrait) and (pointer: coarse) {
         #rotate-hint { display: flex; }
       }
@@ -40,7 +51,13 @@
   </head>
   <body>
     <div id="game"></div>
-    <div id="rotate-hint"><span class="icon">📱</span><div>请横屏游玩</div></div>
+    <div id="rotate-hint">
+      <span class="icon">📱</span>
+      <div>请横屏游玩</div>
+      <div class="sub">把手机横过来，体验更佳</div>
+      <button id="fs-btn" type="button">⛶ 全屏</button>
+      <div id="fs-tip">当前浏览器不支持全屏，可关闭竖排锁定后横屏，或添加到主屏幕</div>
+    </div>
     <script>
       // 阻止 iOS 双指缩放 / 双击缩放 / 下拉刷新（canvas 外的区域）
       ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) {
@@ -54,6 +71,38 @@
         lastTouchEnd = now;
       }, { passive: false });
       document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+      // 竖握遮罩上的全屏按钮：有 Fullscreen API 则进入全屏（并尝试锁横屏）；无 API 则隐藏按钮给一行提示
+      (function () {
+        var btn = document.getElementById('fs-btn');
+        var tip = document.getElementById('fs-tip');
+        var root = document.documentElement;
+        var req = root.requestFullscreen || root.webkitRequestFullscreen;
+        var enabled = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled) && !!req;
+        function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+        function sync() { btn.textContent = fsEl() ? '退出全屏' : '⛶ 全屏'; }
+        if (!enabled) { btn.style.display = 'none'; tip.style.display = 'block'; return; }
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          try {
+            if (fsEl()) {
+              var exit = document.exitFullscreen || document.webkitExitFullscreen;
+              if (exit) exit.call(document);
+              return;
+            }
+            var r = req.call(root);
+            var lock = function () {
+              try {
+                if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function () {});
+              } catch (err) {}
+            };
+            if (r && r.then) r.then(lock).catch(function () { tip.style.display = 'block'; });
+            else lock();
+          } catch (err) { tip.style.display = 'block'; }
+        });
+        document.addEventListener('fullscreenchange', sync);
+        document.addEventListener('webkitfullscreenchange', sync);
+      })();
     </script>
     <script type="module" src="/src/main.js"></script>
   </body>
