@@ -6,18 +6,27 @@ export const GEMS = {
   boss: { color: 0xffb300, xp: 60, w: 20, h: 28 },
 };
 
-// from：开局第几秒开始出现；weight：出现概率权重；size：贴图像素大小
-export const ENEMIES = {
-  mouse: { name: '老鼠', emoji: '🐭', size: 30, hp: 4, speed: 70, damage: 5, gem: 'small', from: 0, weight: 5 },
-  rabbit: { name: '兔子', emoji: '🐰', size: 32, hp: 6, speed: 95, damage: 6, gem: 'small', from: 0, weight: 4 },
-  frog: { name: '青蛙', emoji: '🐸', size: 32, hp: 9, speed: 80, damage: 7, gem: 'small', from: 30, weight: 4 },
-  fox: { name: '狐狸', emoji: '🦊', size: 38, hp: 16, speed: 95, damage: 9, gem: 'medium', from: 60, weight: 3 },
-  wolf: { name: '狼', emoji: '🐺', size: 40, hp: 22, speed: 105, damage: 10, gem: 'medium', from: 90, weight: 3 },
-  boar: { name: '野猪', emoji: '🐗', size: 46, hp: 40, speed: 75, damage: 14, gem: 'large', from: 150, weight: 2 },
-  bear: { name: '熊', emoji: '🐻', size: 56, hp: 80, speed: 60, damage: 18, gem: 'large', from: 210, weight: 2 },
-  tiger: { name: '老虎', emoji: '🐯', size: 54, hp: 70, speed: 110, damage: 20, gem: 'large', from: 270, weight: 2 },
-  elephant: { name: '大象', emoji: '🐘', size: 100, hp: 700, speed: 50, damage: 30, gem: 'boss', boss: true },
-};
+// 普通怪时间成长：hp × (1 + t / HP_TIME_SCALE_SEC)（衡岚 balance-w1.2 §3.4，t/150 → t/200）。Boss 不吃时间成长。
+export const HP_TIME_SCALE_SEC = 200;
 
-export const BOSS_TYPE = 'elephant';
-export const BOSS_EVERY = 180000; // 每 3 分钟来一只 Boss
+// from：开局第几秒开始出现；weight：出现概率权重；size：贴图像素大小
+// behavior（可选）：衡岚 balance-w1-weapons-behaviors.md §C 的移动行为；没有则默认直线追玩家。
+// 基础 hp/speed/damage：balance-w1.2 §2。挑战 Boss（野猪王/狼王/象王）在 src/data/bosses.js。
+export const ENEMIES = {
+  mouse: { name: '老鼠', emoji: '🐭', size: 30, hp: 4, speed: 70, damage: 5, gem: 'small', from: 0, weight: 5,
+    behavior: { type: 'zigzag', amplitude: 18, period: 600 } },
+  rabbit: { name: '兔子', emoji: '🐰', size: 32, hp: 7, speed: 95, damage: 5, gem: 'small', from: 0, weight: 4,
+    behavior: { type: 'hop', hopInterval: 1800, hopDistance: 70, hopSpeedMul: 2.6, windup: 0 } },
+  frog: { name: '青蛙', emoji: '🐸', size: 32, hp: 11, speed: 80, damage: 6, gem: 'small', from: 75, weight: 3,
+    behavior: { type: 'leap', triggerRange: 180, windup: 400, leapDistance: 140, leapSpeedMul: 3.2, interval: 3000, recover: 300 } },
+  fox: { name: '狐狸', emoji: '🦊', size: 38, hp: 20, speed: 100, damage: 10, gem: 'medium', from: 100, weight: 2,
+    behavior: { type: 'sidestep', interval: 2200, dodgeDistance: 60, dodgeSpeedMul: 2.2, burstMul: 1.3, burstMs: 600 } },
+  wolf: { name: '狼', emoji: '🐺', size: 40, hp: 28, speed: 110, damage: 12, gem: 'medium', from: 130, weight: 2,
+    behavior: { type: 'dash', triggerRange: 260, windup: 500, dashDistance: 180, dashSpeedMul: 3.0, interval: 3500 } },
+  boar: { name: '野猪', emoji: '🐗', size: 46, hp: 52, speed: 80, damage: 16, gem: 'large', from: 150, weight: 2,
+    behavior: { type: 'charge', triggerRange: 320, windup: 700, chargeDistance: 260, chargeSpeedMul: 3.5, interval: 5000, recover: 600 } },
+  bear: { name: '熊', emoji: '🐻', size: 56, hp: 104, speed: 65, damage: 21, gem: 'large', from: 210, weight: 2,
+    behavior: { type: 'enrage', hpThreshold: 0.5, speedMul: 1.5, scale: 1.15 } },
+  tiger: { name: '老虎', emoji: '🐯', size: 54, hp: 90, speed: 115, damage: 23, gem: 'large', from: 270, weight: 2,
+    behavior: { type: 'pounce', triggerRange: 220, windup: 350, pounceDistance: 200, pounceSpeedMul: 3.4, interval: 3000, circleSpeedMul: 0.8 } },
+};

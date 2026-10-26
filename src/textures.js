@@ -1,9 +1,20 @@
 import { ENEMIES, GEMS } from './data/enemies.js';
+import { BOSSES } from './data/bosses.js';
+
+export const WEAPON_ART = ['boomerang', 'slash', 'slash_01', 'slash_02'];
+
+// 林绮 PNG：动物（key = ENEMIES 的 key）+ 武器。路径相对 base（/survivor/）
+export function preloadArt(scene) {
+  const keys = new Set([...Object.keys(ENEMIES), ...Object.values(BOSSES).map((b) => b.art)]);
+  for (const key of keys) scene.load.image(key, `assets/enemies/${key}.png`);
+  scene.load.image('elephant_icon', 'assets/enemies/elephant_icon.png');
+  for (const key of WEAPON_ART) scene.load.image(key, `assets/weapons/${key}.png`);
+}
 
 export const EMOJI_FONT = '"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
 export const FONT = '"Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif';
 
-// 所有贴图都用代码生成：火柴人、武器、晶体用线条画，动物用 emoji 画到画布上。
+// 代码生成的贴图：火柴人、飞刀/火球/冰锥/箭、晶体。动物和回旋镖/剑气用 PNG（preloadArt）。
 export function makeTextures(scene) {
   if (scene.textures.exists('stick0')) return;
   const g = scene.make.graphics({ x: 0, y: 0 }, false);
@@ -29,6 +40,18 @@ export function makeTextures(scene) {
   g.generateTexture('fireball', 18, 18);
   g.clear();
 
+  g.fillStyle(0x81d4fa).fillTriangle(0, 6, 16, 0, 16, 12);
+  g.fillStyle(0xe1f5fe).fillTriangle(4, 6, 16, 2, 16, 10);
+  g.generateTexture('frost', 16, 12);
+  g.clear();
+
+  g.fillStyle(0x8d6e63).fillRect(0, 4, 10, 2);
+  g.fillStyle(0xfff8e1).fillTriangle(10, 1, 22, 5, 10, 9);
+  g.generateTexture('arrow', 22, 10);
+  g.clear();
+
+  // 回旋镖 / 剑气 / 动物：改用林绮 PNG（见 preloadArt，public/assets/weapons、enemies）
+
   g.fillStyle(0x7e57c2, 0.15).fillCircle(64, 64, 64);
   g.lineStyle(2, 0x7e57c2, 0.45).strokeCircle(64, 64, 63);
   g.generateTexture('aura', 128, 128);
@@ -42,17 +65,16 @@ export function makeTextures(scene) {
     g.generateTexture(`gem-${tier}`, w, h);
     g.clear();
   }
+
+  // Boss 宝箱（w1.2：捡到 = pendingLevels += n）
+  g.fillStyle(0x8d5524).fillRoundedRect(0, 6, 28, 18, 3);
+  g.fillStyle(0xa1662f).fillRoundedRect(0, 0, 28, 10, 4);
+  g.fillStyle(0xffca28).fillRect(0, 9, 28, 3).fillRect(11, 6, 6, 9);
+  g.lineStyle(1.5, 0x3e2723, 0.8).strokeRoundedRect(0.5, 0.5, 27, 23, 3);
+  g.generateTexture('chest', 28, 24);
+  g.clear();
   g.destroy();
 
-  for (const [key, { emoji, size }] of Object.entries(ENEMIES)) {
-    const tex = scene.textures.createCanvas(key, size, size);
-    const ctx = tex.getContext();
-    ctx.font = `${Math.floor(size * 0.82)}px ${EMOJI_FONT}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(emoji, size / 2, size / 2 + size * 0.06);
-    tex.refresh();
-  }
 }
 
 // frame 0 / 1 是走路的两帧，默认面朝右

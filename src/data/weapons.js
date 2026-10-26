@@ -1,5 +1,7 @@
 // 自动攻击的武器。levels[i] 是第 i+1 级的数值，desc[i] 是升到第 i+1 级时卡片上的说明。
-// cd / tick 单位是毫秒，speed 单位是弧度每秒。
+// 上限 WEAPON_MAX_LEVEL（可欣：从 5 提到 10）。cd/tick 毫秒，speed 弧度/秒，slow 移速倍率。
+export const WEAPON_MAX_LEVEL = 10;
+
 export const WEAPONS = {
   knife: {
     name: '飞刀',
@@ -10,8 +12,13 @@ export const WEAPONS = {
       { dmg: 8, cd: 700, count: 2, pierce: 2 },
       { dmg: 10, cd: 650, count: 3, pierce: 2 },
       { dmg: 13, cd: 550, count: 4, pierce: 3 },
+      { dmg: 16, cd: 520, count: 4, pierce: 3 },
+      { dmg: 19, cd: 490, count: 5, pierce: 3 },
+      { dmg: 22, cd: 460, count: 5, pierce: 4 },
+      { dmg: 26, cd: 430, count: 6, pierce: 4 },
+      { dmg: 30, cd: 400, count: 6, pierce: 5 },
     ],
-    desc: ['向最近的敌人投掷飞刀', '飞刀数量 +1', '伤害提升，穿透 +1', '飞刀数量 +1，伤害提升', '飞刀数量 +1，攻速大幅提升'],
+    desc: ['向最近的敌人投掷飞刀', '飞刀数量 +1', '伤害提升，穿透 +1', '飞刀数量 +1，伤害提升', '飞刀数量 +1，攻速大幅提升', '伤害提升', '飞刀数量 +1', '伤害提升，穿透 +1', '飞刀数量 +1，攻速提升', '飞刀数量保持，伤害与穿透大幅提升'],
   },
   orbit: {
     name: '火球',
@@ -22,8 +29,13 @@ export const WEAPONS = {
       { dmg: 10, count: 3, radius: 85, speed: 3.6 },
       { dmg: 12, count: 4, radius: 90, speed: 3.8 },
       { dmg: 15, count: 5, radius: 100, speed: 4.2 },
+      { dmg: 18, count: 5, radius: 108, speed: 4.4 },
+      { dmg: 21, count: 6, radius: 115, speed: 4.6 },
+      { dmg: 24, count: 6, radius: 122, speed: 4.8 },
+      { dmg: 28, count: 7, radius: 130, speed: 5.0 },
+      { dmg: 32, count: 8, radius: 140, speed: 5.2 },
     ],
-    desc: ['火球环绕身体，烧伤靠近的敌人', '火球 +1', '伤害和转速提升', '火球 +1', '火球 +1，范围扩大'],
+    desc: ['火球环绕身体，烧伤靠近的敌人', '火球 +1', '伤害和转速提升', '火球 +1', '火球 +1，范围扩大', '伤害与范围提升', '火球 +1', '伤害与转速提升', '火球 +1，范围扩大', '火球 +1，伤害与范围大幅提升'],
   },
   lightning: {
     name: '落雷',
@@ -34,8 +46,13 @@ export const WEAPONS = {
       { dmg: 24, cd: 1800, count: 2 },
       { dmg: 28, cd: 1600, count: 3 },
       { dmg: 36, cd: 1300, count: 4 },
+      { dmg: 42, cd: 1200, count: 4 },
+      { dmg: 48, cd: 1100, count: 5 },
+      { dmg: 55, cd: 1000, count: 5 },
+      { dmg: 62, cd: 920, count: 6 },
+      { dmg: 72, cd: 850, count: 6 },
     ],
-    desc: ['定时召唤闪电劈向屏幕内的敌人', '落雷 +1', '伤害提升，冷却缩短', '落雷 +1', '落雷 +1，冷却大幅缩短'],
+    desc: ['定时召唤闪电劈向屏幕内的敌人', '落雷 +1', '伤害提升，冷却缩短', '落雷 +1', '落雷 +1，冷却大幅缩短', '伤害提升', '落雷 +1，冷却缩短', '伤害提升', '落雷 +1', '伤害与攻速大幅提升'],
   },
   aura: {
     name: '光环',
@@ -46,7 +63,87 @@ export const WEAPONS = {
       { dmg: 5, radius: 100, tick: 450 },
       { dmg: 6, radius: 115, tick: 400 },
       { dmg: 8, radius: 135, tick: 350 },
+      { dmg: 10, radius: 145, tick: 330 },
+      { dmg: 12, radius: 155, tick: 310 },
+      { dmg: 14, radius: 165, tick: 290 },
+      { dmg: 16, radius: 175, tick: 270 },
+      { dmg: 20, radius: 190, tick: 250 },
     ],
-    desc: ['持续伤害身边的敌人', '范围扩大', '伤害提升', '范围扩大，伤害提升', '范围和伤害大幅提升'],
+    desc: ['持续伤害身边的敌人', '范围扩大', '伤害提升', '范围扩大，伤害提升', '范围和伤害大幅提升', '伤害提升', '范围扩大', '伤害与频率提升', '范围扩大', '范围和伤害大幅提升'],
+  },
+  frost: {
+    name: '冰锥',
+    icon: '🧊',
+    levels: [
+      { dmg: 6, cd: 1200, count: 1, slow: 0.6 },
+      { dmg: 8, cd: 1100, count: 2, slow: 0.6 },
+      { dmg: 10, cd: 1000, count: 2, slow: 0.55 },
+      { dmg: 12, cd: 900, count: 3, slow: 0.5 },
+      { dmg: 15, cd: 800, count: 3, slow: 0.45 },
+      { dmg: 18, cd: 760, count: 3, slow: 0.42 },
+      { dmg: 21, cd: 720, count: 4, slow: 0.4 },
+      { dmg: 24, cd: 680, count: 4, slow: 0.38 },
+      { dmg: 28, cd: 640, count: 4, slow: 0.35 },
+      { dmg: 32, cd: 600, count: 5, slow: 0.32 },
+    ],
+    desc: ['射出冰锥，命中后短暂减速敌人', '冰锥数量 +1', '伤害提升，减速更强', '冰锥数量 +1，减速更强', '伤害、攻速与减速提升', '伤害提升', '冰锥数量 +1', '伤害与减速提升', '攻速与减速提升', '冰锥数量 +1，伤害大幅提升'],
+  },
+  arrow: {
+    name: '连射箭',
+    icon: '🏹',
+    levels: [
+      { dmg: 3, cd: 1000, count: 3, pierce: 1 },
+      { dmg: 4, cd: 950, count: 4, pierce: 1 },
+      { dmg: 5, cd: 900, count: 5, pierce: 1 },
+      { dmg: 6, cd: 850, count: 6, pierce: 2 },
+      { dmg: 8, cd: 750, count: 7, pierce: 2 },
+      { dmg: 9, cd: 720, count: 7, pierce: 2 },
+      { dmg: 10, cd: 690, count: 8, pierce: 2 },
+      { dmg: 12, cd: 660, count: 8, pierce: 3 },
+      { dmg: 14, cd: 630, count: 9, pierce: 3 },
+      { dmg: 16, cd: 600, count: 10, pierce: 3 },
+    ],
+    desc: ['扇形连射箭矢', '箭矢数量 +1', '箭矢数量 +1，伤害提升', '穿透 +1，数量 +1', '箭雨：数量 +1，伤害与攻速提升', '伤害提升', '箭矢数量 +1', '穿透 +1', '箭矢数量 +1，伤害提升', '箭雨加强：数量 +1，伤害与攻速提升'],
+  },
+  boomerang: {
+    name: '回旋镖',
+    icon: '🪃',
+    levels: [
+      { dmg: 5,  cd: 1500, count: 1, outSpeed: 380, returnSpeed: 460, maxRange: 200, lifetime: 2200, spreadDeg: 0,  hitBothWays: true },
+      { dmg: 6,  cd: 1400, count: 2, outSpeed: 400, returnSpeed: 480, maxRange: 220, lifetime: 2200, spreadDeg: 25, hitBothWays: true },
+      { dmg: 8,  cd: 1300, count: 2, outSpeed: 420, returnSpeed: 500, maxRange: 240, lifetime: 2300, spreadDeg: 25, hitBothWays: true },
+      { dmg: 9,  cd: 1200, count: 3, outSpeed: 440, returnSpeed: 520, maxRange: 260, lifetime: 2400, spreadDeg: 22, hitBothWays: true },
+      { dmg: 12, cd: 1100, count: 4, outSpeed: 460, returnSpeed: 560, maxRange: 300, lifetime: 2500, spreadDeg: 20, hitBothWays: true },
+      { dmg: 14, cd: 1050, count: 4, outSpeed: 480, returnSpeed: 580, maxRange: 320, lifetime: 2500, spreadDeg: 20, hitBothWays: true },
+      { dmg: 16, cd: 1000, count: 5, outSpeed: 500, returnSpeed: 600, maxRange: 340, lifetime: 2600, spreadDeg: 18, hitBothWays: true },
+      { dmg: 18, cd: 950,  count: 5, outSpeed: 520, returnSpeed: 620, maxRange: 360, lifetime: 2600, spreadDeg: 18, hitBothWays: true },
+      { dmg: 21, cd: 900,  count: 6, outSpeed: 540, returnSpeed: 640, maxRange: 380, lifetime: 2700, spreadDeg: 16, hitBothWays: true },
+      { dmg: 24, cd: 850,  count: 6, outSpeed: 560, returnSpeed: 660, maxRange: 400, lifetime: 2800, spreadDeg: 16, hitBothWays: true },
+    ],
+    desc: ['掷出回旋镖，去程和回程都会造成伤害', '回旋镖 +1', '伤害提升，飞得更远', '回旋镖 +1，攻速提升', '回旋镖 +1，伤害、射程与回收速度提升', '伤害与射程提升', '回旋镖 +1', '伤害与攻速提升', '回旋镖 +1，飞得更远', '伤害、射程与数量大幅提升'],
+  },
+  slash: {
+    name: '剑气',
+    icon: '⚔️',
+    levels: [
+      { dmg: 10, cd: 1300, count: 1, arcDeg: 100, range: 110, knockback: 20 },
+      { dmg: 10, cd: 1200, count: 2, arcDeg: 110, range: 115, knockback: 20 },
+      { dmg: 14, cd: 1100, count: 2, arcDeg: 130, range: 125, knockback: 25 },
+      { dmg: 17, cd: 1000, count: 2, arcDeg: 140, range: 135, knockback: 25 },
+      { dmg: 22, cd: 900,  count: 2, arcDeg: 160, range: 150, knockback: 30 },
+      { dmg: 26, cd: 860,  count: 2, arcDeg: 165, range: 160, knockback: 32 },
+      { dmg: 30, cd: 820,  count: 2, arcDeg: 170, range: 170, knockback: 34 },
+      { dmg: 34, cd: 780,  count: 2, arcDeg: 175, range: 180, knockback: 36 },
+      { dmg: 40, cd: 740,  count: 2, arcDeg: 180, range: 190, knockback: 38 },
+      { dmg: 46, cd: 700,  count: 2, arcDeg: 180, range: 200, knockback: 40 },
+    ],
+    desc: ['向前方挥出扇形剑气，斩击范围内所有敌人', '背后追加一道剑气', '伤害提升，斩击更宽', '伤害提升，攻速提升', '剑气大幅加宽加长，伤害与攻速提升', '伤害与射程提升', '斩击更宽，攻速提升', '伤害提升', '范围与伤害提升', '剑气拉满：伤害、射程与攻速大幅提升'],
   },
 };
+
+/** 取某武器某级的数值表（越界钳在 1～WEAPON_MAX_LEVEL）。 */
+export function weaponStats(id, lv) {
+  const w = WEAPONS[id];
+  const i = Math.max(0, Math.min(lv, WEAPON_MAX_LEVEL) - 1);
+  return w.levels[Math.min(i, w.levels.length - 1)];
+}
