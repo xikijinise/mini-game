@@ -3,7 +3,7 @@
 
 export const LANDSCAPE = { width: 1024, height: 640 };
 export const PORTRAIT = { width: 720, height: 1280 }; // 9:16
-export const THUMB_ZONE_H = 280; // 竖屏底部「手指区」高度（≈22%），摇杆只在此带内生效
+export const THUMB_ZONE_H = 280; // 竖屏底部「手指区」高度：用于镜头偏移/HUD 留位与摇杆默认位置；摇杆可触范围为下半屏
 
 // 触控/粗指针设备检测：有触点或 pointer: coarse 即视为手机/平板
 export function isTouchDevice() {

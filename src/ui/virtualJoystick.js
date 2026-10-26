@@ -9,14 +9,15 @@ const BASE_R = 80; // 底盘半径
 const KNOB_R = 36; // 摇杆头半径
 const DEAD = 0.15; // 死区（占半径比例）
 
-// 竖屏底部「手指区」虚拟摇杆（浮动式）：只在底部整宽手指带内按下才生效，底盘移到手指处；
-// 松手回到默认位置（带内水平居中）、方向归零。上方游戏区点击不触发。
+// 竖屏虚拟摇杆（浮动式）：在下半屏任意处按下即生效，底盘移到手指处；
+// 松手回到默认位置（底部水平居中）、方向归零。上半屏点击不触发。
 // 返回 { vector, destroy, setVisible, setEnabled, release }；vector 为归一化方向 × 力度(0..1)
 export function createVirtualJoystick(scene, opts = {}) {
   const { width, height } = scene.scale;
-  const zoneH = opts.zoneH ?? THUMB_ZONE_H;
+  // 可触范围 = 下半屏（与 layout 的手指区常量解耦）；默认位置仍在底部水平居中
+  const zoneH = opts.zoneH ?? Math.round(height / 2);
   const zone = new Phaser.Geom.Rectangle(0, height - zoneH, width, zoneH);
-  const home = { x: opts.x ?? Math.round(width / 2), y: opts.y ?? Math.round(zone.centerY + 10) };
+  const home = { x: opts.x ?? Math.round(width / 2), y: opts.y ?? Math.round(height - Math.min(THUMB_ZONE_H / 2 - 10, zoneH / 2)) };
   const depth = opts.depth ?? 950;
 
   // 手指区不画底板/分隔线/提示字：范围仍可触（zone 命中），视觉上不突出，只显示摇杆本身

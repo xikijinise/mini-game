@@ -141,7 +141,7 @@ export default class GameScene extends Phaser.Scene {
     this.pauseBtn = null;
     if (this.isTouch) {
       this.input.addPointer(2); // 多点触控：按住摇杆时还能点暂停/升级卡
-      this.joystick = createVirtualJoystick(this, { depth: 950, zoneH: this.thumbH || undefined });
+      this.joystick = createVirtualJoystick(this, { depth: 950 }) // 可触范围默认下半屏;
       this.pauseBtn = createPauseButton(this, () => this.onEsc(), { depth: 950 });
     }
 
