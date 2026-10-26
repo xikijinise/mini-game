@@ -2,9 +2,10 @@ import Phaser from 'phaser';
 import { makeTextures, preloadArt, FONT, EMOJI_FONT } from '../textures.js';
 import { ENEMY_HITBOX } from '../data/enemyArt.js';
 import { ENEMIES, GEMS, HP_TIME_SCALE_SEC } from '../data/enemies.js';
-import { BOSSES, bossAt, lapMult, BOSS_DEFER_MS, OFFSCREEN_CLEAR_RADIUS, RETREAT_RUN_MS } from '../data/bosses.js';
-import { killMult, killTier } from '../data/killScale.js';
+import { BOSSES, bossAt, lapMult, BOSS_DEFER_MS, OFFSCREEN_CLEAR_RADIUS } from '../data/bosses.js';
+import { killMult, killTier, unlockedTypes, UNLOCK_STAR, SPAWN_ORDER } from '../data/killScale.js';
 import { WEAPONS, WEAPON_MAX_LEVEL } from '../data/weapons.js';
+import { STAT_BOOSTS, WEAPON_OVER } from '../data/statBoosts.js';
 import { PASSIVES } from '../data/passives.js';
 import { showLevelUp } from '../ui/levelUp.js';
 import { spawnIntervalMs, spawnCount, clampSpawnCount } from '../data/waves.js';
@@ -58,13 +59,12 @@ export default class GameScene extends Phaser.Scene {
     this.xpNeed = xpForLevel(1);
     this.pendingLevels = 0;
     this.spawnCooldown = 0;
-    // 无尽模式（w1.2）：物种击杀成长 + 挑战事件
+    // 无尽模式（w1.2）：物种击杀成长 + 常驻 Boss
     this.killCount = {};
     this.bossKills = 0;
-    this.bossRetreats = 0;
     this.bossIndex = 0;
     this.nextBossAt = bossAt(0).at;
-    this.boss = null; // 当前在场的挑战 Boss
+    this.boss = null; // 当前在场的常驻 Boss
     this.spawnPauseUntil = 0;
     this.fightSpawnMul = 1;
     this.tierQueue = {}; // type → 新星级，等冷却后合并提示
@@ -74,7 +74,8 @@ export default class GameScene extends Phaser.Scene {
     this.damageTexts = 0;
     this.facing = new Phaser.Math.Vector2(1, 0);
 
-    this.stats = { speed: 170, maxHp: 100, hp: 100, regen: 0, pickup: 100, damage: 1, cooldown: 1 };
+    this.stats = { speed: 170, maxHp: 100, hp: 100, regen: 0, pickup: 100, damage: 1, cooldown: 1, atkFlat: 0, defense: 0 };
+    this.statLv = Object.fromEntries(Object.keys(STAT_BOOSTS).map((id) => [id, 0]));
     this.weaponLv = Object.fromEntries(Object.keys(WEAPONS).map((id) => [id, 0]));
     this.weaponLv.knife = 1;
     this.passiveLv = Object.fromEntries(Object.keys(PASSIVES).map((id) => [id, 0]));
@@ -129,9 +130,13 @@ export default class GameScene extends Phaser.Scene {
       this.refreshOwnedBar();
       this.flashMessage('作弊开启：冰锥/连射箭/回旋镖/剑气 · HP 9999');
     }
-    // 手验辅助：?t=145 从第 145 秒开局（配合 cheat 测挑战 Boss）
+    // 手验辅助：?t=145 从第 145 秒开局（配合 cheat 测 Boss）
     const tm = typeof location !== 'undefined' && location.search.match(/[?&]t=(\d+)/);
-    if (tm) this.elapsed = Number(tm[1]) * 1000;
+    if (tm) {
+      this.elapsed = Number(tm[1]) * 1000;
+      while (bossAt(this.bossIndex).at < this.elapsed) this.bossIndex++; // 跳过已过去的 Boss 场次
+      this.nextBossAt = bossAt(this.bossIndex).at;
+    }
   }
 
   update(_, delta) {
@@ -192,7 +197,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   onPlayerHit(_, enemy) {
-    if (this.over || this.elapsed < this.invulnUntil || enemy.retreating) return;
+    if (this.over || this.elapsed < this.invulnUntil) return;
     // Boss 冲撞/践踏途中命中：用技能伤害替代接触伤害，并击退玩家
     const sk = enemy.def.boss && enemy.state === 'move' ? enemy.bh : null;
     if (sk && sk.chargeDamage) {
@@ -205,6 +210,7 @@ export default class GameScene extends Phaser.Scene {
   // 统一受伤入口：接触伤害 / Boss 技能伤害；fromX/fromY + knockback 时把玩家推开
   hurtPlayer(dmg, fromX, fromY, knockback) {
     if (this.over || this.elapsed < this.invulnUntil) return;
+    dmg = Math.max(1, Math.round(dmg - (this.stats.defense || 0)));
     this.stats.hp -= dmg;
     if (knockback && fromX !== undefined) {
       const a = Phaser.Math.Angle.Between(fromX, fromY, this.player.x, this.player.y);
@@ -228,7 +234,7 @@ export default class GameScene extends Phaser.Scene {
   // ---------- 怪物 ----------
 
   spawnEnemies(dt) {
-    // 挑战事件：同一时刻只有一个 Boss；上一场未结束则在 endBossFight 里顺延
+    // 常驻 Boss：同一时刻只有一个；上一场未结束则在 endBossFight 里顺延
     if (!this.boss && this.elapsed >= this.nextBossAt) this.startBossFight(bossAt(this.bossIndex++));
 
     const t = this.elapsed / 1000;
@@ -246,7 +252,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   pickEnemyType(t) {
-    const pool = Object.entries(ENEMIES).filter(([, e]) => t >= e.from);
+    const ids = unlockedTypes(t, this.killCount, ENEMIES);
+    const pool = ids.map((id) => [id, ENEMIES[id]]);
     let r = Math.random() * pool.reduce((sum, [, e]) => sum + e.weight, 0);
     for (const [type, e] of pool) {
       r -= e.weight;
@@ -271,14 +278,14 @@ export default class GameScene extends Phaser.Scene {
       sy = cy + Math.sin(a) * r;
       if (!nearHardObstacle(this, sx, sy)) break;
     }
-    // 实例数值（w1.2 §3.2）：普通怪 = 基础 × 时间成长(t/200) × 物种星级；Boss = 基础 × 轮次倍率，不吃时间成长
+    // 实例数值：普通怪 = 基础 × 时间成长(t/200) × 物种星级；常驻 Boss = 基础 × 时间成长(同公式) × 轮次倍率
     const m = def.boss ? { hp: 1, dmg: 1, spd: 1, tier: 0 } : killMult(type, this.killCount[type] || 0);
     const lm = def.boss ? lapMult(opts.lap || 0) : { hp: 1, dmg: 1, spd: 1 };
-    const timeMul = def.boss ? 1 : 1 + this.elapsed / (HP_TIME_SCALE_SEC * 1000);
+    const timeMul = 1 + this.elapsed / (HP_TIME_SCALE_SEC * 1000); // 可欣：Boss 也吃时间成长
 
     // PNG 贴图：脚底锚点；只按高度缩放（宽度随物种），碰撞盒按 enemies/README.md
     const e = this.enemies.create(sx, sy, art).setOrigin(0.5, 1);
-    e.baseScale = (def.size / e.height) * (m.tier >= 6 ? 1.08 : 1); // ★6+ 体型 ×1.08
+    e.baseScale = (def.size / e.height) * (1 + Math.min(0.35, m.tier * 0.04)); // 每星体型 +4%，上限 +35%
     e.setScale(e.baseScale);
     e.hitbox = ENEMY_HITBOX[art] || [0, 0, e.width, e.height];
     e.body.setSize(e.hitbox[2], e.hitbox[3], false);
@@ -292,7 +299,7 @@ export default class GameScene extends Phaser.Scene {
     e.hp = def.hp * timeMul * m.hp * lm.hp;
     e.damage = Math.round(def.damage * m.dmg * lm.dmg);
     e.speed = def.speed * m.spd * lm.spd;
-    e.baseTint = m.tier >= 3 ? 0xffcdd2 : 0; // ★3+ 淡红
+    e.baseTint = m.tier >= 2 ? 0xffcdd2 : 0; // ★2+ 淡红
     if (e.baseTint) e.setTint(e.baseTint);
     e.knockUntil = 0;
     e.flashUntil = 0;
@@ -321,12 +328,6 @@ export default class GameScene extends Phaser.Scene {
       }
       e.rotation = Math.sin(this.elapsed / 110 + e.seed) * 0.12; // 走路时左右晃
       if (this.elapsed < e.knockUntil) continue;
-      if (e.retreating) { // 撤退：背离玩家跑，RETREAT_RUN_MS 后由 updateBossFight 移除
-        const a = Phaser.Math.Angle.Between(p.x, p.y, e.x, e.y);
-        e.setVelocity(Math.cos(a) * e.speed * 1.6, Math.sin(a) * e.speed * 1.6);
-        if (Math.abs(e.body.velocity.x) > 5) this.setEnemyFlip(e, e.body.velocity.x < 0);
-        continue;
-      }
       const busy = e.def.boss && (e.state === 'windup' || e.state === 'move'); // Boss 技能中不瞬移
       if (!busy && Phaser.Math.Distance.Between(e.x, e.y, p.x, p.y) > DESPAWN_RADIUS) {
         const a = Math.random() * Math.PI * 2;
@@ -540,8 +541,8 @@ export default class GameScene extends Phaser.Scene {
 
   // fromX / fromY 传了就把怪往反方向击退（Boss 不吃击退）
   damageEnemy(e, amount, fromX, fromY) {
-    if (!e.active || e.retreating) return;
-    const dmg = amount * this.stats.damage;
+    if (!e.active) return;
+    const dmg = amount * this.stats.damage + (this.stats.atkFlat || 0);
     e.hp -= dmg;
     e.setTintFill(0xffffff);
     e.flashUntil = this.elapsed + 70;
@@ -569,10 +570,19 @@ export default class GameScene extends Phaser.Scene {
   // ---------- 物种击杀成长（balance-w1.2 §3） ----------
 
   countKill(type) {
-    const before = killTier(type, this.killCount[type] || 0);
+        const before = killTier(type, this.killCount[type] || 0);
+    const unlockedBefore = new Set(unlockedTypes(this.elapsed / 1000, this.killCount, ENEMIES));
     this.killCount[type] = (this.killCount[type] || 0) + 1;
     const after = killTier(type, this.killCount[type]);
     if (after > before) this.tierQueue[type] = after;
+    if (after >= UNLOCK_STAR && before < UNLOCK_STAR) {
+      const unlockedAfter = unlockedTypes(this.elapsed / 1000, this.killCount, ENEMIES);
+      const fresh = unlockedAfter.filter((id) => !unlockedBefore.has(id));
+      if (fresh.length) {
+        const names = fresh.map((id) => `${ENEMIES[id].emoji}${ENEMIES[id].name}`).join('、');
+        this.flashMessage(`${ENEMIES[type].emoji}★${after} → 解锁 ${names}`);
+      }
+    }
   }
 
   // 升星提示：冷却 3s，冷却内的多个物种合并成一条
@@ -596,7 +606,7 @@ export default class GameScene extends Phaser.Scene {
       .filter((x) => x.tier > 0);
   }
 
-  // ---------- 挑战事件 Boss（balance-w1.2 §4） ----------
+  // ---------- 常驻 Boss（按 bossAt 时间表登场，打到死才走，不撤退） ----------
 
   startBossFight({ id, lap }) {
     const def = BOSSES[id];
@@ -609,14 +619,13 @@ export default class GameScene extends Phaser.Scene {
     }
     const b = this.spawnEnemy(id, { lap, radius: 520 });
     b.spawnAt = this.elapsed;
-    b.retreatAt = this.elapsed + f.retreatAfterMs;
     this.boss = b;
     this.spawnPauseUntil = this.elapsed + f.pauseSpawnMs;
     this.fightSpawnMul = f.fightSpawnMul;
-    this.flashMessage(`⚠ 挑战：${def.emoji} ${def.name}${lap ? ` · 第 ${lap + 1} 轮` : ''}`);
+    this.flashMessage(`⚠ Boss 来袭：${def.emoji} ${def.name}${lap ? ` · 第 ${lap + 1} 轮` : ''}`);
   }
 
-  // 打掉或撤退后：恢复刷怪；下一场若时间已过，顺延到 10s 后
+  // Boss 被击杀后：恢复刷怪；下一场若时间已过，顺延到 10s 后
   endBossFight() {
     const b = this.boss;
     if (b && b.def.skill.despawnOnBossDeath) {
@@ -630,24 +639,7 @@ export default class GameScene extends Phaser.Scene {
   updateBossFight() {
     const b = this.boss;
     if (!b) return;
-    if (!b.active) return this.endBossFight(); // 兜底
-    if (b.retreating) {
-      if (this.elapsed >= b.retreatGoneAt) {
-        this.clearWarn(b);
-        b.destroy();
-        this.endBossFight();
-      }
-      return;
-    }
-    if (this.elapsed >= b.retreatAt) { // 超时撤退：不掉东西，不计胜利
-      b.retreating = true;
-      b.retreatGoneAt = this.elapsed + RETREAT_RUN_MS;
-      b.state = 'chase';
-      this.clearWarn(b);
-      b.setAlpha(0.7);
-      this.bossRetreats++;
-      this.flashMessage(b.def.retreatMsg);
-    }
+    if (!b.active) this.endBossFight(); // 兜底：Boss 已不在场（正常击杀走 onBossKilled）
   }
 
   onBossKilled(e, x, y) {
@@ -694,7 +686,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   hasUpgradeChoices() {
-    return Object.keys(WEAPONS).some((id) => this.weaponLv[id] < WEAPON_MAX_LEVEL) || Object.keys(PASSIVES).length > 0;
+    return true; // 数值卡与被动/武器超限始终可选
   }
 
   // 二阶段（hp < phase2At）：改写技能参数、常驻红色、提示
@@ -782,7 +774,7 @@ export default class GameScene extends Phaser.Scene {
   updateKnife(dt) {
     const lv = this.weaponLv.knife;
     if (!lv || (this.cooldowns.knife -= dt) > 0) return;
-    const s = WEAPONS.knife.levels[lv - 1];
+    const s = this.weaponRuntime('knife');
     this.cooldowns.knife = s.cd * this.stats.cooldown;
 
     const p = this.player;
@@ -790,7 +782,7 @@ export default class GameScene extends Phaser.Scene {
     const base = target ? Phaser.Math.Angle.Between(p.x, p.y, target.body.center.x, target.body.center.y) : this.facing.angle();
     for (let i = 0; i < s.count; i++) {
       const a = base + (i - (s.count - 1) / 2) * 0.2;
-      const k = this.knives.create(p.x, p.y - 6, 'knife').setRotation(a).setDepth(8);
+      const k = this.knives.create(p.x, p.y - 6, 'knife').setRotation(a).setDepth(8).setScale(s._sizeMul || 1);
       k.body.setCircle(5, 5, 0);
       k.setVelocity(Math.cos(a) * 480, Math.sin(a) * 480);
       Object.assign(k, { damage: s.dmg, pierce: s.pierce, hits: new Set(), dieAt: this.elapsed + 1300 });
@@ -813,8 +805,9 @@ export default class GameScene extends Phaser.Scene {
   updateOrbit(dt) {
     const lv = this.weaponLv.orbit;
     if (!lv) return;
-    const s = WEAPONS.orbit.levels[lv - 1];
+    const s = this.weaponRuntime('orbit');
     while (this.orbs.length < s.count) this.orbs.push(this.add.image(0, 0, 'fireball').setDepth(9));
+    this.orbs.forEach((orb) => orb.setScale(s._sizeMul || 1));
 
     const p = this.player;
     this.orbAngle += s.speed * dt / 1000;
@@ -839,7 +832,7 @@ export default class GameScene extends Phaser.Scene {
   updateLightning(dt) {
     const lv = this.weaponLv.lightning;
     if (!lv || (this.cooldowns.lightning -= dt) > 0) return;
-    const s = WEAPONS.lightning.levels[lv - 1];
+    const s = this.weaponRuntime('lightning');
     this.cooldowns.lightning = s.cd * this.stats.cooldown;
 
     const view = this.cameras.main.worldView;
@@ -865,7 +858,7 @@ export default class GameScene extends Phaser.Scene {
   updateAura(dt) {
     const lv = this.weaponLv.aura;
     if (!lv) return;
-    const s = WEAPONS.aura.levels[lv - 1];
+    const s = this.weaponRuntime('aura');
     const p = this.player;
     this.aura.setVisible(true).setPosition(p.x, p.y).setScale(s.radius / 64);
     if ((this.cooldowns.aura -= dt) > 0) return;
@@ -880,7 +873,7 @@ export default class GameScene extends Phaser.Scene {
   updateFrost(dt) {
     const lv = this.weaponLv.frost;
     if (!lv || (this.cooldowns.frost -= dt) > 0) return;
-    const s = WEAPONS.frost.levels[lv - 1];
+    const s = this.weaponRuntime('frost');
     this.cooldowns.frost = s.cd * this.stats.cooldown;
 
     const p = this.player;
@@ -888,7 +881,7 @@ export default class GameScene extends Phaser.Scene {
     const a = target ? Phaser.Math.Angle.Between(p.x, p.y, target.body.center.x, target.body.center.y) : this.facing.angle();
     for (let i = 0; i < s.count; i++) {
       const ang = a + (i - (s.count - 1) / 2) * 0.18;
-      const b = this.frostBolts.create(p.x, p.y - 4, 'frost').setRotation(ang).setDepth(8);
+      const b = this.frostBolts.create(p.x, p.y - 4, 'frost').setRotation(ang).setDepth(8).setScale(s._sizeMul || 1);
       b.body.setCircle(6, 4, 2);
       b.setVelocity(Math.cos(ang) * 420, Math.sin(ang) * 420);
       Object.assign(b, { damage: s.dmg, slow: s.slow, hits: new Set(), dieAt: this.elapsed + 1400 });
@@ -916,7 +909,7 @@ export default class GameScene extends Phaser.Scene {
   updateArrow(dt) {
     const lv = this.weaponLv.arrow;
     if (!lv || (this.cooldowns.arrow -= dt) > 0) return;
-    const s = WEAPONS.arrow.levels[lv - 1];
+    const s = this.weaponRuntime('arrow');
     this.cooldowns.arrow = s.cd * this.stats.cooldown;
 
     const p = this.player;
@@ -924,7 +917,7 @@ export default class GameScene extends Phaser.Scene {
     const base = target ? Phaser.Math.Angle.Between(p.x, p.y, target.body.center.x, target.body.center.y) : this.facing.angle();
     for (let i = 0; i < s.count; i++) {
       const a = base + (i - (s.count - 1) / 2) * 0.14;
-      const ar = this.arrows.create(p.x, p.y - 4, 'arrow').setRotation(a).setDepth(8);
+      const ar = this.arrows.create(p.x, p.y - 4, 'arrow').setRotation(a).setDepth(8).setScale(s._sizeMul || 1);
       ar.body.setCircle(4, 8, 1);
       ar.setVelocity(Math.cos(a) * 520, Math.sin(a) * 520);
       Object.assign(ar, { damage: s.dmg, pierce: s.pierce, hits: new Set(), dieAt: this.elapsed + 1200 });
@@ -988,7 +981,7 @@ export default class GameScene extends Phaser.Scene {
 
     const lv = this.weaponLv.boomerang;
     if (!lv || (this.cooldowns.boomerang -= dt) > 0) return;
-    const s = WEAPONS.boomerang.levels[lv - 1];
+    const s = this.weaponRuntime('boomerang');
     this.cooldowns.boomerang = s.cd * this.stats.cooldown;
     const maxRange = s.maxRange ?? s.range ?? 200;
     const outSpeed = s.outSpeed ?? 400;
@@ -998,7 +991,7 @@ export default class GameScene extends Phaser.Scene {
     for (let i = 0; i < s.count; i++) {
       const a = base + (i - (s.count - 1) / 2) * spread; // 以目标方向为中心扇形
       this.boomerangs.push({
-        img: this.add.image(px, py, 'boomerang').setDepth(8),
+        img: this.add.image(px, py, 'boomerang').setDepth(8).setScale(s._sizeMul || 1),
         x: px, y: py, dist: 0, returning: false,
         dir: new Phaser.Math.Vector2(Math.cos(a), Math.sin(a)),
         outSpeed, returnSpeed: s.returnSpeed ?? outSpeed * 1.2, maxRange,
@@ -1012,7 +1005,7 @@ export default class GameScene extends Phaser.Scene {
   updateSlash(dt) {
     const lv = this.weaponLv.slash;
     if (!lv || (this.cooldowns.slash -= dt) > 0) return;
-    const s = WEAPONS.slash.levels[lv - 1];
+    const s = this.weaponRuntime('slash');
     const radius = s.range ?? s.radius; // 兼容表字段 range/arcDeg 与旧字段 radius/arc
     const arcDeg = s.arcDeg ?? s.arc;
     const p = this.player;
@@ -1126,21 +1119,68 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+
+  /** 取武器当前战斗数值：≤10 用 levels 表；超过 10 只叠伤害/体积倍率。 */
+  weaponRuntime(id) {
+    const lv = this.weaponLv[id];
+    if (!lv) return null;
+    const tableLv = Math.min(lv, WEAPON_MAX_LEVEL);
+    const s = { ...WEAPONS[id].levels[tableLv - 1] };
+    const over = Math.max(0, lv - WEAPON_MAX_LEVEL);
+    if (over > 0) {
+      const dmul = 1 + over * WEAPON_OVER.dmgMul;
+      const smul = 1 + over * WEAPON_OVER.sizeMul;
+      if (s.dmg != null) s.dmg = Math.round(s.dmg * dmul);
+      for (const k of ['radius', 'range', 'maxRange']) {
+        if (s[k] != null) s[k] = Math.round(s[k] * smul);
+      }
+      if (s.knockback != null) s.knockback = Math.round(s.knockback * (1 + over * 0.05));
+      s._sizeMul = smul;
+    } else {
+      s._sizeMul = 1;
+    }
+    return s;
+  }
+
   buildChoices() {
     const pool = [];
     for (const [id, w] of Object.entries(WEAPONS)) {
       const lv = this.weaponLv[id];
-      if (lv < WEAPON_MAX_LEVEL) {
+      if (lv <= 0) {
+        pool.push({ kind: 'weapon', id, name: w.name, icon: w.icon, lv: 0, desc: w.desc[0] });
+      } else if (lv < WEAPON_MAX_LEVEL) {
         const desc = w.desc[Math.min(lv, w.desc.length - 1)] || '数值继续提升';
         pool.push({ kind: 'weapon', id, name: w.name, icon: w.icon, lv, desc });
+      } else {
+        // 10 级后仍可选：只加数值 + 变大/范围
+        const pctD = Math.round(WEAPON_OVER.dmgMul * 100);
+        const pctS = Math.round(WEAPON_OVER.sizeMul * 100);
+        pool.push({
+          kind: 'weapon',
+          id,
+          name: w.name,
+          icon: w.icon,
+          lv,
+          desc: `变大强化：伤害 +${pctD}%，体积/范围 +${pctS}%`,
+        });
       }
     }
     for (const [id, p] of Object.entries(PASSIVES)) {
       const lv = this.passiveLv[id];
-      // 被动无升级上限
       pool.push({ kind: 'passive', id, name: p.name, icon: p.icon, lv, desc: p.desc });
     }
-    const picks = Phaser.Utils.Array.Shuffle(pool).slice(0, 5);
+    for (const [id, b] of Object.entries(STAT_BOOSTS)) {
+      const lv = this.statLv[id] || 0;
+      pool.push({ kind: 'stat', id, name: b.name, icon: b.icon, lv, desc: b.desc });
+    }
+    // 保证 5 选里至少有 1 张数值卡（有则优先塞进池再洗）
+    const stats = pool.filter((c) => c.kind === 'stat');
+    const rest = pool.filter((c) => c.kind !== 'stat');
+    Phaser.Utils.Array.Shuffle(rest);
+    Phaser.Utils.Array.Shuffle(stats);
+    const guaranteed = stats.slice(0, 1);
+    const fill = Phaser.Utils.Array.Shuffle(rest.concat(stats.slice(1))).slice(0, 5 - guaranteed.length);
+    const picks = Phaser.Utils.Array.Shuffle(guaranteed.concat(fill));
     return picks.length ? picks : [{ kind: 'food', name: '鸡腿', icon: '🍗', desc: '回复 30 生命' }];
   }
 
@@ -1150,6 +1190,9 @@ export default class GameScene extends Phaser.Scene {
     } else if (c.kind === 'passive') {
       this.passiveLv[c.id]++;
       PASSIVES[c.id].apply(this.stats, this);
+    } else if (c.kind === 'stat') {
+      this.statLv[c.id] = (this.statLv[c.id] || 0) + 1;
+      STAT_BOOSTS[c.id].apply(this.stats, this);
     } else {
       this.heal(30);
     }
@@ -1202,7 +1245,7 @@ export default class GameScene extends Phaser.Scene {
     this.killText = fixed(this.add.text(width - 14, 30, '', HUD_FONT).setOrigin(1, 0));
     // 右上角小字：星级最高的两个物种（w1.2 §6.7 可选）
     this.tierText = fixed(this.add.text(width - 14, 58, '', { ...HUD_FONT, fontSize: '16px', color: '#e65100' }).setOrigin(1, 0));
-    // 挑战 Boss 血条（顶部居中，计时下方）
+    // Boss 血条（顶部居中，计时下方）
     this.bossBar = fixed(this.add.graphics());
     this.bossName = fixed(this.add.text(width / 2, 64, '', { ...HUD_FONT, fontSize: '18px' }).setOrigin(0.5, 0));
 
@@ -1277,8 +1320,7 @@ export default class GameScene extends Phaser.Scene {
     const { width } = this.scale;
     const w = Math.min(420, width * 0.5);
     const x = (width - w) / 2;
-    const secLeft = Math.max(0, Math.ceil((b.retreatAt - this.elapsed) / 1000));
-    this.bossName.setText(`${b.def.emoji} ${b.def.name}${b.lap ? ` · 第 ${b.lap + 1} 轮` : ''}${b.retreating ? ' · 撤退中' : ` · ${secLeft}s`}`);
+    this.bossName.setText(`${b.def.emoji} ${b.def.name}${b.lap ? ` · 第 ${b.lap + 1} 轮` : ''}`);
     this.bossBar
       .fillStyle(0x000000, 0.6).fillRect(x - 2, 88, w + 4, 14)
       .fillStyle(0x333333).fillRect(x, 90, w, 10)
@@ -1355,7 +1397,7 @@ export default class GameScene extends Phaser.Scene {
     line(-140, '你倒下了', 56, '#ffffff', true);
     line(-70, `存活 ${formatTime(this.elapsed)}`, 40, '#ffffff', true);
     line(-28, `最佳存活 ${formatTime(best)}${newBest ? '（新纪录！）' : ''}`, 20, newBest ? '#ffd54f' : '#cccccc');
-    line(14, `等级 ${this.level}    击杀 ${this.kills}    挑战击退 ${this.bossKills} / 撤退 ${this.bossRetreats}`, 24);
+    line(14, `等级 ${this.level}    击杀 ${this.kills}    Boss 击杀 ${this.bossKills}`, 24);
     line(54, `物种最高星：${tierLine}`, 22, '#ffcc80');
     line(110, '点击或按空格重新开始', 22, '#ffd54f');
     const kb = this.input.keyboard;

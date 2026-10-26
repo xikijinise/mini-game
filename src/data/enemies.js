@@ -6,12 +6,12 @@ export const GEMS = {
   boss: { color: 0xffb300, xp: 60, w: 20, h: 28 },
 };
 
-// 普通怪时间成长：hp × (1 + t / HP_TIME_SCALE_SEC)（衡岚 balance-w1.2 §3.4，t/150 → t/200）。Boss 不吃时间成长。
+// 普通怪时间成长：hp × (1 + t / HP_TIME_SCALE_SEC)（衡岚 balance-w1.2 §3.4，t/150 → t/200）。Boss 也吃同一时间成长（可欣）。
 export const HP_TIME_SCALE_SEC = 200;
 
 // from：开局第几秒开始出现；weight：出现概率权重；size：贴图像素大小
 // behavior（可选）：衡岚 balance-w1-weapons-behaviors.md §C 的移动行为；没有则默认直线追玩家。
-// 基础 hp/speed/damage：balance-w1.2 §2。挑战 Boss（野猪王/狼王/象王）在 src/data/bosses.js。
+// 基础 hp/speed/damage：balance-w1.2 §2。常驻 Boss（野猪王/狼王/象王）在 src/data/bosses.js。
 export const ENEMIES = {
   mouse: { name: '老鼠', emoji: '🐭', size: 30, hp: 4, speed: 70, damage: 5, gem: 'small', from: 0, weight: 5,
     behavior: { type: 'zigzag', amplitude: 18, period: 600 } },
