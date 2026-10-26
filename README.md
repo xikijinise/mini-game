@@ -3,8 +3,7 @@
 
 ## 预览地址
 
-
-- GitHub Pages：https://xikijinise.github.io/mini-game/ （Actions 构建时 `VITE_BASE=/mini-game/`）
+- GitHub Pages：https://xikijinise.github.io/mini-game/ （构建时设 `VITE_BASE=/mini-game/`）
 
 割草类肉鸽小游戏：你只管上下左右走位，武器会自动攻击。打死动物会掉经验晶体，升级时三选一强化，坚持得越久怪越多越强。
 
