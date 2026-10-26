@@ -10,22 +10,16 @@ const KNOB_R = 36; // 摇杆头半径
 const DEAD = 0.15; // 死区（占半径比例）
 
 // 竖屏底部「手指区」虚拟摇杆（浮动式）：只在底部整宽手指带内按下才生效，底盘移到手指处；
-// 松手回到默认位置（带内居中略偏左）、方向归零。上方游戏区点击不触发。
+// 松手回到默认位置（带内水平居中）、方向归零。上方游戏区点击不触发。
 // 返回 { vector, destroy, setVisible, setEnabled, release }；vector 为归一化方向 × 力度(0..1)
 export function createVirtualJoystick(scene, opts = {}) {
   const { width, height } = scene.scale;
   const zoneH = opts.zoneH ?? THUMB_ZONE_H;
   const zone = new Phaser.Geom.Rectangle(0, height - zoneH, width, zoneH);
-  const home = { x: opts.x ?? Math.round(width * 0.42), y: opts.y ?? Math.round(zone.centerY + 10) };
+  const home = { x: opts.x ?? Math.round(width / 2), y: opts.y ?? Math.round(zone.centerY + 10) };
   const depth = opts.depth ?? 950;
 
-  // 手指区底板：半透明深色带 + 顶部分隔线 + 提示字，区分游戏区与摇杆区（不可交互，不挡触摸）
-  const panel = scene.add.graphics().setScrollFactor(0).setDepth(depth - 1);
-  panel.fillStyle(0x1d1f2b, 0.38).fillRect(zone.x, zone.y, zone.width, zone.height);
-  panel.fillStyle(0xffffff, 0.35).fillRect(zone.x, zone.y, zone.width, 2);
-  const zoneLabel = scene.add.text(width / 2, height - 18, '按住此区域拖动移动', {
-    fontFamily: FONT, fontSize: '18px', color: '#ffffff',
-  }).setOrigin(0.5, 1).setAlpha(0.55).setScrollFactor(0).setDepth(depth - 1);
+  // 手指区不画底板/分隔线/提示字：范围仍可触（zone 命中），视觉上不突出，只显示摇杆本身
 
   const base = scene.add.circle(home.x, home.y, BASE_R, 0x000000, 0.18)
     .setStrokeStyle(3, 0xffffff, 0.55).setScrollFactor(0).setDepth(depth);
@@ -107,8 +101,6 @@ export function createVirtualJoystick(scene, opts = {}) {
     scene.game.events.off(Phaser.Core.Events.HIDDEN, onBlur);
     base.destroy();
     knob.destroy();
-    panel.destroy();
-    zoneLabel.destroy();
   };
   scene.events.once('shutdown', destroy);
 
@@ -122,8 +114,6 @@ export function createVirtualJoystick(scene, opts = {}) {
       visible = v;
       base.setVisible(v);
       knob.setVisible(v);
-      panel.setVisible(v);
-      zoneLabel.setVisible(v);
       if (!v) release();
     },
     setEnabled(v) {
