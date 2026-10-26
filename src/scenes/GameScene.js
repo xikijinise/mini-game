@@ -83,6 +83,10 @@ export default class GameScene extends Phaser.Scene {
     this.boomerangs = []; // { img, x, y, dir, dist, returning, outSpeed, returnSpeed, maxRange, dieAt, hitOut, hitBack }
     this.orbAngle = 0;
     this.orbs = [];
+    this.flailAngle = 0;
+    this.flails = []; // 链球图片（绕身慢转）
+    this.flailChain = this.add.graphics().setDepth(8);
+    this.spikes = []; // { x, y, r, dmg, hitAt, dieAt, warn, img, hit:Set }
 
     const { width, height } = this.scale;
     this.bg = this.add.tileSprite(0, 0, width + 128, height + 128, 'grid').setDepth(-10);
@@ -126,9 +130,11 @@ export default class GameScene extends Phaser.Scene {
       this.weaponLv.arrow = 1;
       this.weaponLv.boomerang = 1;
       this.weaponLv.slash = 1;
+      this.weaponLv.spike = 1;
+      this.weaponLv.flail = 1;
       this.stats.hp = this.stats.maxHp = 9999;
       this.refreshOwnedBar();
-      this.flashMessage('作弊开启：冰锥/连射箭/回旋镖/剑气 · HP 9999');
+      this.flashMessage('作弊开启：冰锥/连射箭/回旋镖/剑气/地刺/链球 · HP 9999');
     }
     // 手验辅助：?t=145 从第 145 秒开局（配合 cheat 测 Boss）
     const tm = typeof location !== 'undefined' && location.search.match(/[?&]t=(\d+)/);
@@ -155,6 +161,8 @@ export default class GameScene extends Phaser.Scene {
     this.updateArrow(dt);
     this.updateBoomerang(dt);
     this.updateSlash(dt);
+    this.updateSpike(dt);
+    this.updateFlail(dt);
     this.updateKnives();
     this.updateFrostBolts();
     this.updateArrows();
@@ -304,6 +312,7 @@ export default class GameScene extends Phaser.Scene {
     e.knockUntil = 0;
     e.flashUntil = 0;
     e.orbitHitAt = 0;
+    e.flailHitAt = 0;
     e.seed = Math.random() * 10;
     // 行为钩子（衡岚 §C）：def.behavior.type，没有则 chase。初始相位随机 0～interval，避免整群同步
     e.maxHp = e.hp;
@@ -827,6 +836,96 @@ export default class GameScene extends Phaser.Scene {
         this.damageEnemy(e, s.dmg, orb.x, orb.y);
       }
     }
+  }
+
+  // 链球：比火球更远、更慢、更重，数量少；每怪命中冷却 450ms
+  updateFlail(dt) {
+    const lv = this.weaponLv.flail;
+    if (!lv) return;
+    const s = this.weaponRuntime('flail');
+    const sm = s._sizeMul || 1;
+    while (this.flails.length < s.count) this.flails.push(this.add.image(0, 0, 'flail').setOrigin(30 / 46, 0.5).setDepth(9));
+    const p = this.player;
+    this.flailAngle += s.speed * dt / 1000;
+    this.flailChain.clear().lineStyle(2, 0x757575, 0.55);
+    this.flails.forEach((f, i) => {
+      const a = this.flailAngle + (i / s.count) * Math.PI * 2;
+      const fx = p.x + Math.cos(a) * s.radius;
+      const fy = p.y + Math.sin(a) * s.radius;
+      f.setPosition(fx, fy).setRotation(a).setScale(1.15 * sm);
+      this.flailChain.lineBetween(p.x, p.y, fx, fy);
+    });
+
+    const ballR = 14 * sm;
+    for (const e of this.enemies.getChildren().slice()) {
+      if (this.elapsed < e.flailHitAt) continue;
+      const { x: ex, y: ey } = e.body.center;
+      if (Math.abs(ex - p.x) > s.radius + 80 || Math.abs(ey - p.y) > s.radius + 80) continue;
+      const reach = ballR + e.def.size * 0.35;
+      const f = this.flails.find((o) => Phaser.Math.Distance.Between(o.x, o.y, ex, ey) < reach);
+      if (f) {
+        e.flailHitAt = this.elapsed + 450;
+        this.damageEnemy(e, s.dmg, f.x, f.y);
+      }
+    }
+  }
+
+  // 地刺：冷却到了在脚下（多根则绕身一圈）预警 → 冒刺结算一次 → durationMs 后消失
+  updateSpike(dt) {
+    if (this.spikes.length) this.tickSpikes();
+    const lv = this.weaponLv.spike;
+    if (!lv || (this.cooldowns.spike -= dt) > 0) return;
+    const s = this.weaponRuntime('spike');
+    this.cooldowns.spike = s.cd * this.stats.cooldown;
+    const p = this.player;
+    const n = s.count || 1;
+    const pts = [];
+    if (n === 1) {
+      pts.push({ x: p.x + this.facing.x * 12, y: p.y + 10 + this.facing.y * 12 });
+    } else {
+      const ring = s.radius * 1.15;
+      const a0 = Math.random() * Math.PI * 2;
+      for (let i = 0; i < n; i++) {
+        const a = a0 + (i / n) * Math.PI * 2;
+        pts.push({ x: p.x + Math.cos(a) * ring, y: p.y + 10 + Math.sin(a) * ring });
+      }
+    }
+    for (const pt of pts) {
+      const warn = this.add.graphics().setDepth(2);
+      warn.fillStyle(0xb71c1c, 0.18).fillCircle(0, 0, s.radius);
+      warn.lineStyle(2, 0xb71c1c, 0.55).strokeCircle(0, 0, s.radius);
+      warn.setPosition(pt.x, pt.y).setScale(0.6);
+      this.tweens.add({ targets: warn, scale: 1, duration: s.warnMs });
+      this.spikes.push({ x: pt.x, y: pt.y, r: s.radius, dmg: s.dmg, hitAt: this.elapsed + s.warnMs, dieAt: this.elapsed + s.warnMs + s.durationMs, warn, img: null, hit: new Set() });
+    }
+  }
+
+  tickSpikes() {
+    for (const sp of this.spikes) {
+      if (!sp.img && this.elapsed >= sp.hitAt) {
+        sp.warn.destroy();
+        sp.warn = null;
+        const sc = sp.r / 40;
+        sp.img = this.add.image(sp.x, sp.y + sp.r * 0.25, 'spike').setOrigin(0.5, 1).setDepth(7).setScale(sc, 0.2);
+        this.tweens.add({ targets: sp.img, scaleY: sc, duration: 90, ease: 'Back.Out' });
+        for (const e of this.enemies.getChildren().slice()) {
+          if (sp.hit.has(e)) continue;
+          const { x: ex, y: ey } = e.body.center;
+          if (Phaser.Math.Distance.Between(sp.x, sp.y, ex, ey) > sp.r + e.def.size * 0.3) continue;
+          sp.hit.add(e);
+          this.damageEnemy(e, sp.dmg, sp.x, sp.y);
+        }
+      }
+      if (this.elapsed >= sp.dieAt) {
+        if (sp.warn) sp.warn.destroy();
+        if (sp.img) {
+          const img = sp.img;
+          this.tweens.add({ targets: img, alpha: 0, scaleY: img.scaleY * 0.3, duration: 120, onComplete: () => img.destroy() });
+        }
+        sp.dead = true;
+      }
+    }
+    this.spikes = this.spikes.filter((sp) => !sp.dead);
   }
 
   updateLightning(dt) {

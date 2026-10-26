@@ -139,6 +139,40 @@ export const WEAPONS = {
     ],
     desc: ['向前方挥出扇形剑气，斩击范围内所有敌人', '背后追加一道剑气', '伤害提升，斩击更宽', '伤害提升，攻速提升', '剑气大幅加宽加长，伤害与攻速提升', '伤害与射程提升', '斩击更宽，攻速提升', '伤害提升', '范围与伤害提升', '剑气拉满：伤害、射程与攻速大幅提升'],
   },
+  spike: {
+    name: '地刺',
+    icon: '🪨',
+    levels: [
+      { dmg: 12, cd: 1400, count: 1, radius: 48, warnMs: 280, durationMs: 400 },
+      { dmg: 14, cd: 1340, count: 2, radius: 50, warnMs: 270, durationMs: 400 },
+      { dmg: 17, cd: 1260, count: 2, radius: 53, warnMs: 255, durationMs: 400 },
+      { dmg: 19, cd: 1180, count: 3, radius: 55, warnMs: 240, durationMs: 400 },
+      { dmg: 22, cd: 1100, count: 3, radius: 58, warnMs: 230, durationMs: 400 },
+      { dmg: 25, cd: 1050, count: 3, radius: 60, warnMs: 220, durationMs: 400 },
+      { dmg: 28, cd: 1000, count: 4, radius: 63, warnMs: 210, durationMs: 400 },
+      { dmg: 32, cd: 950,  count: 4, radius: 65, warnMs: 200, durationMs: 400 },
+      { dmg: 36, cd: 900,  count: 5, radius: 68, warnMs: 190, durationMs: 400 },
+      { dmg: 40, cd: 850,  count: 5, radius: 70, warnMs: 180, durationMs: 400 },
+    ],
+    desc: ['脚下预警后冒出岩刺，刺伤范围内敌人', '岩刺 +1，环绕脚边', '伤害与范围提升', '岩刺 +1，冷却缩短', '伤害、范围提升，冒刺更快', '伤害提升', '岩刺 +1，范围扩大', '伤害与攻速提升', '岩刺 +1，冒刺更快', '岩刺拉满：伤害、范围与攻速大幅提升'],
+  },
+  flail: {
+    name: '链球',
+    icon: '⛓️',
+    levels: [
+      { dmg: 14, count: 1, radius: 110, speed: 1.6 },
+      { dmg: 17, count: 1, radius: 118, speed: 1.7 },
+      { dmg: 20, count: 2, radius: 124, speed: 1.8 },
+      { dmg: 24, count: 2, radius: 132, speed: 1.9 },
+      { dmg: 28, count: 2, radius: 140, speed: 2.0 },
+      { dmg: 32, count: 2, radius: 146, speed: 2.1 },
+      { dmg: 36, count: 3, radius: 152, speed: 2.15 },
+      { dmg: 40, count: 3, radius: 158, speed: 2.2 },
+      { dmg: 44, count: 3, radius: 164, speed: 2.3 },
+      { dmg: 48, count: 3, radius: 170, speed: 2.4 },
+    ],
+    desc: ['沉重链球绕身远距离慢转，重击撞上的敌人', '伤害提升，甩得更远', '链球 +1', '伤害、距离与转速提升', '伤害与距离大幅提升', '伤害提升', '链球 +1', '伤害与距离提升', '伤害与转速提升', '链球拉满：伤害、距离与转速大幅提升'],
+  },
 };
 
 /** 取某武器某级的数值表（越界钳在 1～WEAPON_MAX_LEVEL）。 */

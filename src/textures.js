@@ -52,6 +52,26 @@ export function makeTextures(scene) {
 
   // 回旋镖 / 剑气 / 动物：改用林绮 PNG（见 preloadArt，public/assets/weapons、enemies）
 
+  // 地刺：灰色岩刺（三根尖）
+  g.fillStyle(0x5d5d5d).fillTriangle(2, 40, 12, 10, 20, 40);
+  g.fillStyle(0x757575).fillTriangle(12, 40, 22, 0, 32, 40);
+  g.fillStyle(0x616161).fillTriangle(24, 40, 33, 14, 42, 40);
+  g.fillStyle(0xbdbdbd, 0.6).fillTriangle(22, 2, 25, 40, 22, 40);
+  g.lineStyle(1.5, 0x263238, 0.6).strokeTriangle(12, 40, 22, 0, 32, 40);
+  g.generateTexture('spike', 44, 42);
+  g.clear();
+
+  // 链球：深灰铁球 + 小钉 + 一小段链（链朝左，球心在 (30,16)）
+  g.lineStyle(2, 0x9e9e9e);
+  g.strokeEllipse(5, 16, 8, 5).strokeEllipse(11, 16, 8, 5);
+  g.fillStyle(0x424242);
+  g.fillTriangle(30, 0, 27, 6, 33, 6).fillTriangle(30, 32, 27, 26, 33, 26).fillTriangle(46, 16, 40, 13, 40, 19);
+  g.fillStyle(0x37474f).fillCircle(30, 16, 12);
+  g.fillStyle(0x90a4ae, 0.7).fillCircle(26, 12, 4);
+  g.lineStyle(1.5, 0x111111, 0.7).strokeCircle(30, 16, 12);
+  g.generateTexture('flail', 46, 32);
+  g.clear();
+
   g.fillStyle(0x7e57c2, 0.15).fillCircle(64, 64, 64);
   g.lineStyle(2, 0x7e57c2, 0.45).strokeCircle(64, 64, 63);
   g.generateTexture('aura', 128, 128);
