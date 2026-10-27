@@ -8,12 +8,14 @@ import { WEAPONS, WEAPON_MAX_LEVEL } from '../data/weapons.js';
 import { STAT_BOOSTS, WEAPON_OVER } from '../data/statBoosts.js';
 import { PASSIVES } from '../data/passives.js';
 import { showLevelUp } from '../ui/levelUp.js';
+import { createVirtualJoystick, createPauseButton, isTouchDevice } from '../ui/virtualJoystick.js';
+import { thumbZoneHeight } from '../layout.js';
 import { spawnIntervalMs, spawnCount, clampSpawnCount } from '../data/waves.js';
 import { preloadObstacles, placeObstacles, bushFactor, nearHardObstacle, ySortDepth } from '../systems/obstacles.js';
 
 const MAX_ENEMIES = 300;
-const BASE_SPAWN_RADIUS = 640; // 在屏幕外一圈刷怪（1024×640 视野时）
-const BASE_DESPAWN_RADIUS = 1000; // 离太远的怪挪回玩家附近
+const SPAWN_RADIUS = 640; // 在屏幕外一圈刷怪
+const DESPAWN_RADIUS = 1000; // 离太远的怪挪回玩家附近
 // dash 类行为的距离 / 速度倍率字段名（衡岚 §C）
 const DASH_KEYS = {
   dash: { dist: 'dashDistance', mul: 'dashSpeedMul' },
@@ -52,6 +54,8 @@ export default class GameScene extends Phaser.Scene {
     this.paused = false;
     this.levelUpOpen = false;
     this.pauseLayer = null;
+    this.overLayer = null;
+    this.levelUpUi = null;
     this.over = false;
     this.kills = 0;
     this.level = 1;
@@ -89,12 +93,13 @@ export default class GameScene extends Phaser.Scene {
     this.spikes = []; // { x, y, r, dmg, hitAt, dieAt, warn, img, hit:Set }
 
     const { width, height } = this.scale;
-    this.updateSpawnRadius(width, height);
     this.bg = this.add.tileSprite(0, 0, width + 128, height + 128, 'grid').setDepth(-10);
     this.aura = this.add.image(0, 0, 'aura').setDepth(1).setVisible(false);
     this.player = this.physics.add.sprite(0, 0, 'stick0').setDepth(10);
     this.player.body.setSize(16, 40);
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
+    // 竖屏触控：底部 thumbH 为手指区，镜头下移半个手指区；刷怪半径覆盖整块可见画面。旋转时 onScaleResize 重算
+    this.applyViewMetrics(width, height);
     this.hpBar = this.add.graphics().setDepth(11);
     this.pickupRing = this.add.graphics().setDepth(2); // 拾取范围淡圈：低于晶体(3)和玩家(10)
 
@@ -115,15 +120,32 @@ export default class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.arrows, this.enemies, this.onArrowHit, null, this);
     this.physics.add.overlap(this.player, this.enemies, this.onPlayerHit, null, this);
 
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.wasd = this.input.keyboard.addKeys('W,A,S,D');
-    this.input.keyboard.on('keydown-ESC', this.onEsc, this);
-    this.events.once('shutdown', () => this.input.keyboard.off('keydown-ESC', this.onEsc, this));
+    // 部分移动浏览器 keyboard 插件可能不可用，判空
+    const kb = this.input.keyboard;
+    this.cursors = kb ? kb.createCursorKeys() : null;
+    this.wasd = kb ? kb.addKeys('W,A,S,D') : null;
+    if (kb) {
+      kb.on('keydown-ESC', this.onEsc, this);
+      this.events.once('shutdown', () => kb.off('keydown-ESC', this.onEsc, this));
+    }
 
     this.createHud();
     this.scale.on('resize', this.onScaleResize, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.onScaleResize, this));
-    const hint = this.startHint = this.add.text(width / 2, height - 60, 'WASD / 方向键移动 · 自动攻击 · 捡晶体升级', { ...HUD_FONT, fontSize: '22px' })
+
+    // 手机/平板（layout.isMobileDevice）：竖握下半屏 / 横握左下浮动摇杆 + 右上暂停钮；电脑（含触控笔记本）一律键鼠，不建摇杆
+    this.isTouch = isTouchDevice();
+    this.joystick = null;
+    this.pauseBtn = null;
+    if (this.isTouch) {
+      this.input.addPointer(2); // 多点触控：按住摇杆时还能点暂停/升级卡
+      this.joystick = createVirtualJoystick(this, { depth: 950 });
+      this.pauseBtn = createPauseButton(this, () => this.onEsc(), { depth: 950 });
+      this.placePauseBtn();
+    }
+
+    const hintText = this.isTouch ? (this.thumbH ? '下半屏摇杆移动 · 自动攻击 · 捡晶体升级' : '左下摇杆移动 · 自动攻击 · 捡晶体升级') : 'WASD / 方向键移动 · 自动攻击 · 捡晶体升级';
+    const hint = this.startHint = this.add.text(width / 2, this.playH - 60, hintText, { ...HUD_FONT, fontSize: '22px' })
       .setOrigin(0.5).setScrollFactor(0).setDepth(100);
     this.tweens.add({ targets: hint, alpha: 0, delay: 4000, duration: 800, onComplete: () => hint.destroy() });
 
@@ -187,8 +209,20 @@ export default class GameScene extends Phaser.Scene {
   movePlayer() {
     const c = this.cursors;
     const k = this.wasd;
-    const x = (c.right.isDown || k.D.isDown ? 1 : 0) - (c.left.isDown || k.A.isDown ? 1 : 0);
-    const y = (c.down.isDown || k.S.isDown ? 1 : 0) - (c.up.isDown || k.W.isDown ? 1 : 0);
+    const down = (key) => !!(key && key.isDown);
+    let x = 0;
+    let y = 0;
+    if (c && k) {
+      x = (down(c.right) || down(k.D) ? 1 : 0) - (down(c.left) || down(k.A) ? 1 : 0);
+      y = (down(c.down) || down(k.S) ? 1 : 0) - (down(c.up) || down(k.W) ? 1 : 0);
+    }
+    // 键盘 + 摇杆矢量相加后归一化，任一非零即移动
+    if (this.joystick) {
+      x += this.joystick.vector.x;
+      y += this.joystick.vector.y;
+      if (Math.abs(x) < 1e-3) x = 0;
+      if (Math.abs(y) < 1e-3) y = 0;
+    }
     const dir = new Phaser.Math.Vector2(x, y).normalize();
     const p = this.player;
     const footY = p.y + p.displayHeight / 2;
@@ -1210,8 +1244,8 @@ export default class GameScene extends Phaser.Scene {
     this.pendingLevels--;
     this.levelUpOpen = true;
     this.setPaused(true);
-    this.levelUpParts = showLevelUp(this, this.level - this.pendingLevels, this.buildChoices(), (picked) => {
-      this.levelUpParts = null;
+    this.levelUpUi = showLevelUp(this, this.level - this.pendingLevels, this.buildChoices(), (picked) => {
+      this.levelUpUi = null;
       for (const choice of picked) this.applyChoice(choice);
       if (this.pendingLevels > 0) {
         this.openLevelUp();
@@ -1313,17 +1347,27 @@ export default class GameScene extends Phaser.Scene {
       if (this.paused) return;
       const { width, height } = this.scale;
       const fixed = (obj) => obj.setScrollFactor(0).setDepth(1500);
+      const mask = fixed(this.add.rectangle(0, 0, width, height, 0x000000, 0.5).setOrigin(0));
       this.pauseLayer = [
-        fixed(this.add.rectangle(0, 0, width, height, 0x000000, 0.5).setOrigin(0)),
-        fixed(this.add.text(width / 2, height / 2 - 30, '暂停', { fontFamily: FONT, fontSize: '56px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5)),
-        fixed(this.add.text(width / 2, height / 2 + 40, 'Esc 继续', { fontFamily: FONT, fontSize: '24px', color: '#ffd54f' }).setOrigin(0.5)),
+        mask,
+        fixed(this.add.text(width / 2, this.playH / 2 - 30, '暂停', { fontFamily: FONT, fontSize: '56px', color: '#ffffff', fontStyle: 'bold' }).setOrigin(0.5)),
+        fixed(this.add.text(width / 2, this.playH / 2 + 40, this.isTouch ? '点屏幕继续' : 'Esc 继续', { fontFamily: FONT, fontSize: '24px', color: '#ffd54f' }).setOrigin(0.5)),
       ];
+      if (this.isTouch) {
+        // 点遮罩继续；忽略打开后 200ms 内的点击，避免同一下触摸立刻关掉
+        const openedAt = this.time.now;
+        mask.setInteractive().on('pointerdown', () => {
+          if (this.time.now - openedAt < 200) return;
+          if (this.pauseLayer) this.onEsc();
+        });
+      }
       this.setPaused(true);
     }
   }
 
   setPaused(paused) {
     this.paused = paused;
+    if (this.joystick) this.joystick.setEnabled(!paused); // 暂停/升级时禁用摇杆并归零
     if (paused) {
       this.physics.pause();
       this.tweens.pauseAll();
@@ -1353,7 +1397,7 @@ export default class GameScene extends Phaser.Scene {
     this.bossName = fixed(this.add.text(width / 2, 64, '', { ...HUD_FONT, fontSize: '18px' }).setOrigin(0.5, 0));
 
     // 已拥有武器/被动图标条（顶栏下方左侧）
-    this.ownedBar = fixed(this.add.container(14, 62));
+    this.ownedBar = fixed(this.add.container(14, this.thumbH ? 110 : 62)); // 竖屏窄宽：挪到 Boss 条下方
     this.refreshOwnedBar();
 
     // 受伤全屏淡红
@@ -1376,22 +1420,12 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  // 刷怪圈随视野变大：保证落点始终在屏幕外（半对角线 + 余量），最少保持原 640 / 1000
-  updateSpawnRadius(width, height) {
-    this.spawnRadius = Math.max(BASE_SPAWN_RADIUS, Math.ceil(Math.hypot(width, height) / 2) + 40);
-    this.despawnRadius = Math.max(BASE_DESPAWN_RADIUS, this.spawnRadius + 360);
-  }
-
-  // 窗口缩放后按新逻辑宽高重排固定在屏幕上的 HUD / 暂停层 / 升级面板 / 结算层
+  // 视口变化（手机地址栏收起、旋转）后按新逻辑宽高重排固定在屏幕上的 HUD / 摇杆 / 暂停钮
   onScaleResize(gameSize) {
     const width = gameSize.width;
     const height = gameSize.height;
-    const prevW = this.lastW ?? width;
-    const prevH = this.lastH ?? height;
-    this.lastW = width;
-    this.lastH = height;
-    this.updateSpawnRadius(width, height);
-    if (this.bg) this.bg.setSize(width + 128, height + 128);
+    this.applyViewMetrics(width, height);
+    if (this.ownedBar) this.ownedBar.setY(this.thumbH ? 110 : 62);
     if (this.xpBg) this.xpBg.setSize(width, 24);
     if (this.xpFill) this.xpFill.setSize(width, 24);
     if (this.xpShade) this.xpShade.setSize(width, 3);
@@ -1401,26 +1435,39 @@ export default class GameScene extends Phaser.Scene {
     if (this.bossName) this.bossName.setX(width / 2);
     if (this.hurtFlash) this.hurtFlash.setSize(width, height);
     if (this.lowHpVignette) this.drawVignette(width, height);
-    if (this.startHint && this.startHint.active) this.startHint.setPosition(width / 2, height - 60);
-    // 居中类浮层：全屏遮罩改尺寸，其余元素随中心平移
-    const dx = (width - prevW) / 2;
-    const dy = (height - prevH) / 2;
-    const shift = (objs, moveY) => {
-      if (!objs) return;
-      objs.forEach((o, i) => {
-        if (!o || !o.active) return;
-        if (i === 0 && o.type === 'Rectangle' && o.originX === 0) {
-          o.setSize(width, height);
-          if (o.input) o.input.hitArea.setTo(0, 0, width, height);
-          return;
-        }
-        o.x += dx;
-        if (moveY) o.y += dy;
-      });
-    };
-    shift(this.pauseLayer, true);
-    shift(this.gameOverLayer, true);
-    shift(this.levelUpParts, true);
+    if (this.startHint && this.startHint.active) {
+      this.startHint.setPosition(width / 2, this.playH - 60);
+      if (this.isTouch) this.startHint.setText(this.thumbH ? '下半屏摇杆移动 · 自动攻击 · 捡晶体升级' : '左下摇杆移动 · 自动攻击 · 捡晶体升级');
+    }
+    if (this.joystick) this.joystick.relayout(width, height);
+    this.placePauseBtn();
+    if (this.pauseLayer && this.pauseLayer[0]) {
+      this.pauseLayer[0].setSize(width, height);
+      if (this.pauseLayer[0].input) this.pauseLayer[0].input.hitArea.setTo(0, 0, width, height);
+      if (this.pauseLayer[1]) this.pauseLayer[1].setPosition(width / 2, this.playH / 2 - 30);
+      if (this.pauseLayer[2]) this.pauseLayer[2].setPosition(width / 2, this.playH / 2 + 40);
+    }
+    if (this.levelUpUi) this.levelUpUi.relayout();
+    if (this.overLayer) this.drawGameOver();
+  }
+
+  // 按当前画布方向算手指区 / 游戏区 / 镜头偏移 / 刷怪半径（开局与旋转时调用）
+  applyViewMetrics(width, height) {
+    this.thumbH = thumbZoneHeight(this);
+    this.playH = height - this.thumbH;
+    const halfDiag = Math.hypot(width / 2, this.playH / 2 + this.thumbH);
+    this.spawnRadius = Math.max(SPAWN_RADIUS, Math.ceil(halfDiag + 60));
+    this.despawnRadius = Math.max(DESPAWN_RADIUS, this.spawnRadius + 360);
+    // 镜头下移 thumbH/2 后，背景格需多盖一个手指区高度，否则竖屏底部露底色
+    if (this.bg) this.bg.setSize(width + 128, height + 128 + this.thumbH * 2);
+    this.cameras.main.setFollowOffset(0, this.thumbH ? -this.thumbH / 2 : 0);
+  }
+
+  placePauseBtn() {
+    if (!this.pauseBtn) return;
+    const { width } = this.scale;
+    if (this.thumbH) this.pauseBtn.setPosition(width - 52, 132);
+    else this.pauseBtn.setPosition(width - 46, 118);
   }
 
   refreshOwnedBar() {
@@ -1522,6 +1569,30 @@ export default class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: t, alpha: 0, delay: 1800, duration: 600, onComplete: () => t.destroy() });
   }
 
+  // 死亡结算面板（可重绘：旋转时按新画布重排）
+  drawGameOver() {
+    if (this.overLayer) this.overLayer.forEach((o) => o.destroy());
+    this.overLayer = [];
+    const { best, newBest, tierLine } = this.overInfo;
+    const { width, height } = this.scale;
+    const fixed = (obj) => {
+      this.overLayer.push(obj);
+      return obj.setScrollFactor(0).setDepth(1000);
+    };
+    const cy = this.playH / 2; // 竖屏时居于游戏区中央，不压进手指区
+    const line = (y, text, size, color = '#ffffff', bold = false) => fixed(this.add.text(width / 2, cy + y, text, {
+      fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal',
+      align: 'center', wordWrap: { width: width - 40, useAdvancedWrap: true },
+    }).setOrigin(0.5));
+    fixed(this.add.rectangle(0, 0, width, height, 0x000000, 0.6).setOrigin(0));
+    line(-140, '你倒下了', 56, '#ffffff', true);
+    line(-70, `存活 ${formatTime(this.elapsed)}`, 40, '#ffffff', true);
+    line(-28, `最佳存活 ${formatTime(best)}${newBest ? '（新纪录！）' : ''}`, 20, newBest ? '#ffd54f' : '#cccccc');
+    line(14, `等级 ${this.level}    击杀 ${this.kills}    Boss 击杀 ${this.bossKills}`, 24);
+    line(54, `物种最高星：${tierLine}`, 22, '#ffcc80');
+    line(this.thumbH ? 140 : 110, this.isTouch ? '点屏幕重新开始' : '点击或按空格重新开始', 22, '#ffd54f');
+  }
+
   gameOver() {
     this.over = true;
     this.stats.hp = 0;
@@ -1543,31 +1614,24 @@ export default class GameScene extends Phaser.Scene {
     const tiers = this.speciesTiers();
     const tierLine = tiers.length ? tiers.map(({ type, tier }) => `${ENEMIES[type].emoji}★${tier}`).join('  ') : '暂无（还没有物种升星）';
 
-    const { width, height } = this.scale;
-    this.gameOverLayer = [];
-    const fixed = (obj) => {
-      this.gameOverLayer.push(obj);
-      return obj.setScrollFactor(0).setDepth(1000);
-    };
-    const line = (y, text, size, color = '#ffffff', bold = false) => fixed(this.add.text(width / 2, height / 2 + y, text, {
-      fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal',
-    }).setOrigin(0.5));
-    fixed(this.add.rectangle(0, 0, width, height, 0x000000, 0.6).setOrigin(0));
-    line(-140, '你倒下了', 56, '#ffffff', true);
-    line(-70, `存活 ${formatTime(this.elapsed)}`, 40, '#ffffff', true);
-    line(-28, `最佳存活 ${formatTime(best)}${newBest ? '（新纪录！）' : ''}`, 20, newBest ? '#ffd54f' : '#cccccc');
-    line(14, `等级 ${this.level}    击杀 ${this.kills}    Boss 击杀 ${this.bossKills}`, 24);
-    line(54, `物种最高星：${tierLine}`, 22, '#ffcc80');
-    line(110, '点击或按空格重新开始', 22, '#ffd54f');
+    this.overInfo = { best, newBest, tierLine };
+    this.overLayer = [];
+    this.drawGameOver();
+    if (this.joystick) this.joystick.setVisible(false);
+    if (this.pauseBtn) this.pauseBtn.setVisible(false);
     const kb = this.input.keyboard;
     const restart = () => {
       this.input.off('pointerdown', restart);
-      kb.off('keydown-SPACE', restart);
-      kb.off('keydown-ENTER', restart);
+      if (kb) {
+        kb.off('keydown-SPACE', restart);
+        kb.off('keydown-ENTER', restart);
+      }
       this.scene.restart();
     };
     this.input.once('pointerdown', restart);
-    kb.once('keydown-SPACE', restart);
-    kb.once('keydown-ENTER', restart);
+    if (kb) {
+      kb.once('keydown-SPACE', restart);
+      kb.once('keydown-ENTER', restart);
+    }
   }
 }
