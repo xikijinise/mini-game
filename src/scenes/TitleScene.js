@@ -142,7 +142,7 @@ export default class TitleScene extends Phaser.Scene {
     const portrait = isPortraitLayout(this);
     const k = portrait ? 1.3 : 1; // 竖屏画布缩放更小，放大引导页元素
     this.cameras.main.setSize(width, height);
-    this.hint.setText(!this.touch ? '桌面：WASD / 方向键移动' : portrait ? '触控：下半屏摇杆移动\n横竖屏都能玩' : '触控：左侧摇杆移动\n横竖屏都能玩');
+    this.hint.setText(!this.touch ? '电脑：WASD / 方向键移动 · Esc 暂停' : portrait ? '触控：下半屏摇杆移动\n横竖屏都能玩' : '触控：左侧摇杆移动\n横竖屏都能玩');
     [this.title, this.sub, this.hint, this.startBtn].forEach((o) => o.setScale(k));
     if (this.fsBtn) this.fsBtn.setScale(k);
     if (this.fsNote) this.fsNote.setScale(k).setWordWrapWidth(Math.round((width - 60) / k), true);

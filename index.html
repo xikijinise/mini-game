@@ -25,6 +25,8 @@
       }
       canvas { touch-action: none; display: block; }
       #game canvas { margin: 0 !important; }
+      /* 电脑：固定 1024×640 FIT，窗体比例不同时居中留边（手机方案逻辑画布按视口比，铺满无留边） */
+      html[data-device="desktop"] #game { display: flex; align-items: center; justify-content: center; }
       /* 竖握/横握同一构建：不再有「请横屏游玩」遮罩；全屏入口在开局引导页右上 */
     </style>
   </head>

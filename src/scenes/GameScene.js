@@ -133,7 +133,7 @@ export default class GameScene extends Phaser.Scene {
     this.scale.on('resize', this.onScaleResize, this);
     this.events.once('shutdown', () => this.scale.off('resize', this.onScaleResize, this));
 
-    // 手机/平板横屏：左半屏下部浮动摇杆 + 右上暂停按钮；桌面无触控时不显示
+    // 手机/平板（layout.isMobileDevice）：竖握下半屏 / 横握左下浮动摇杆 + 右上暂停钮；电脑（含触控笔记本）一律键鼠，不建摇杆
     this.isTouch = isTouchDevice();
     this.joystick = null;
     this.pauseBtn = null;
