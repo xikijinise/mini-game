@@ -12,8 +12,8 @@ import { spawnIntervalMs, spawnCount, clampSpawnCount } from '../data/waves.js';
 import { preloadObstacles, placeObstacles, bushFactor, nearHardObstacle, ySortDepth } from '../systems/obstacles.js';
 
 const MAX_ENEMIES = 300;
-const SPAWN_RADIUS = 640; // 在屏幕外一圈刷怪
-const DESPAWN_RADIUS = 1000; // 离太远的怪挪回玩家附近
+const BASE_SPAWN_RADIUS = 640; // 在屏幕外一圈刷怪（1024×640 视野时）
+const BASE_DESPAWN_RADIUS = 1000; // 离太远的怪挪回玩家附近
 // dash 类行为的距离 / 速度倍率字段名（衡岚 §C）
 const DASH_KEYS = {
   dash: { dist: 'dashDistance', mul: 'dashSpeedMul' },
@@ -89,6 +89,7 @@ export default class GameScene extends Phaser.Scene {
     this.spikes = []; // { x, y, r, dmg, hitAt, dieAt, warn, img, hit:Set }
 
     const { width, height } = this.scale;
+    this.updateSpawnRadius(width, height);
     this.bg = this.add.tileSprite(0, 0, width + 128, height + 128, 'grid').setDepth(-10);
     this.aura = this.add.image(0, 0, 'aura').setDepth(1).setVisible(false);
     this.player = this.physics.add.sprite(0, 0, 'stick0').setDepth(10);
@@ -120,7 +121,9 @@ export default class GameScene extends Phaser.Scene {
     this.events.once('shutdown', () => this.input.keyboard.off('keydown-ESC', this.onEsc, this));
 
     this.createHud();
-    const hint = this.add.text(width / 2, height - 60, 'WASD / 方向键移动 · 自动攻击 · 捡晶体升级', { ...HUD_FONT, fontSize: '22px' })
+    this.scale.on('resize', this.onScaleResize, this);
+    this.events.once('shutdown', () => this.scale.off('resize', this.onScaleResize, this));
+    const hint = this.startHint = this.add.text(width / 2, height - 60, 'WASD / 方向键移动 · 自动攻击 · 捡晶体升级', { ...HUD_FONT, fontSize: '22px' })
       .setOrigin(0.5).setScrollFactor(0).setDepth(100);
     this.tweens.add({ targets: hint, alpha: 0, delay: 4000, duration: 800, onComplete: () => hint.destroy() });
 
@@ -277,7 +280,7 @@ export default class GameScene extends Phaser.Scene {
     // 落点避开硬碰锚点，最多重抽 6 次，失败也照刷（不死循环）
     const cx = opts.x ?? this.player.x;
     const cy = opts.y ?? this.player.y;
-    const r = opts.radius ?? SPAWN_RADIUS;
+    const r = opts.radius ?? this.spawnRadius;
     let sx = 0;
     let sy = 0;
     for (let i = 0; i < 6; i++) {
@@ -338,9 +341,9 @@ export default class GameScene extends Phaser.Scene {
       e.rotation = Math.sin(this.elapsed / 110 + e.seed) * 0.12; // 走路时左右晃
       if (this.elapsed < e.knockUntil) continue;
       const busy = e.def.boss && (e.state === 'windup' || e.state === 'move'); // Boss 技能中不瞬移
-      if (!busy && Phaser.Math.Distance.Between(e.x, e.y, p.x, p.y) > DESPAWN_RADIUS) {
+      if (!busy && Phaser.Math.Distance.Between(e.x, e.y, p.x, p.y) > this.despawnRadius) {
         const a = Math.random() * Math.PI * 2;
-        e.setPosition(p.x + Math.cos(a) * SPAWN_RADIUS, p.y + Math.sin(a) * SPAWN_RADIUS);
+        e.setPosition(p.x + Math.cos(a) * this.spawnRadius, p.y + Math.sin(a) * this.spawnRadius);
       }
       const footY = e.y; // origin(0.5,1)：y 即脚底
       e.setDepth(ySortDepth(footY));
@@ -1207,7 +1210,8 @@ export default class GameScene extends Phaser.Scene {
     this.pendingLevels--;
     this.levelUpOpen = true;
     this.setPaused(true);
-    showLevelUp(this, this.level - this.pendingLevels, this.buildChoices(), (picked) => {
+    this.levelUpParts = showLevelUp(this, this.level - this.pendingLevels, this.buildChoices(), (picked) => {
+      this.levelUpParts = null;
       for (const choice of picked) this.applyChoice(choice);
       if (this.pendingLevels > 0) {
         this.openLevelUp();
@@ -1335,10 +1339,10 @@ export default class GameScene extends Phaser.Scene {
     const { width } = this.scale;
     const fixed = (obj) => obj.setScrollFactor(0).setDepth(100);
     const { height } = this.scale;
-    fixed(this.add.rectangle(0, 0, width, 24, 0x1c1c1c).setOrigin(0));
+    this.xpBg = fixed(this.add.rectangle(0, 0, width, 24, 0x1c1c1c).setOrigin(0));
     this.xpFill = fixed(this.add.rectangle(0, 0, width, 24, 0x2196f3).setOrigin(0));
     this.xpFill.scaleX = 0;
-    fixed(this.add.rectangle(0, 21, width, 3, 0x000000, 0.35).setOrigin(0)); // 底边阴影，让蓝条更立体
+    this.xpShade = fixed(this.add.rectangle(0, 21, width, 3, 0x000000, 0.35).setOrigin(0)); // 底边阴影，让蓝条更立体
     this.levelText = fixed(this.add.text(14, 30, '', HUD_FONT));
     this.timeText = fixed(this.add.text(width / 2, 30, '', { ...HUD_FONT, fontSize: '26px' }).setOrigin(0.5, 0));
     this.killText = fixed(this.add.text(width - 14, 30, '', HUD_FONT).setOrigin(1, 0));
@@ -1357,6 +1361,11 @@ export default class GameScene extends Phaser.Scene {
 
     // 低血屏幕边缘泛红（持续状态，与 hurtFlash 短闪分开）
     this.lowHpVignette = this.add.graphics().setScrollFactor(0).setDepth(899).setAlpha(0);
+    this.drawVignette(width, height);
+  }
+
+  drawVignette(width, height) {
+    this.lowHpVignette.clear();
     const bands = 14;
     const band = Math.round(Math.min(width, height) * 0.012);
     for (let i = 0; i < bands; i++) {
@@ -1365,6 +1374,53 @@ export default class GameScene extends Phaser.Scene {
       this.lowHpVignette.lineStyle(band, 0xd50000, a * a)
         .strokeRect(inset + band / 2, inset + band / 2, width - 2 * inset - band, height - 2 * inset - band);
     }
+  }
+
+  // 刷怪圈随视野变大：保证落点始终在屏幕外（半对角线 + 余量），最少保持原 640 / 1000
+  updateSpawnRadius(width, height) {
+    this.spawnRadius = Math.max(BASE_SPAWN_RADIUS, Math.ceil(Math.hypot(width, height) / 2) + 40);
+    this.despawnRadius = Math.max(BASE_DESPAWN_RADIUS, this.spawnRadius + 360);
+  }
+
+  // 窗口缩放后按新逻辑宽高重排固定在屏幕上的 HUD / 暂停层 / 升级面板 / 结算层
+  onScaleResize(gameSize) {
+    const width = gameSize.width;
+    const height = gameSize.height;
+    const prevW = this.lastW ?? width;
+    const prevH = this.lastH ?? height;
+    this.lastW = width;
+    this.lastH = height;
+    this.updateSpawnRadius(width, height);
+    if (this.bg) this.bg.setSize(width + 128, height + 128);
+    if (this.xpBg) this.xpBg.setSize(width, 24);
+    if (this.xpFill) this.xpFill.setSize(width, 24);
+    if (this.xpShade) this.xpShade.setSize(width, 3);
+    if (this.timeText) this.timeText.setX(width / 2);
+    if (this.killText) this.killText.setX(width - 14);
+    if (this.tierText) this.tierText.setX(width - 14);
+    if (this.bossName) this.bossName.setX(width / 2);
+    if (this.hurtFlash) this.hurtFlash.setSize(width, height);
+    if (this.lowHpVignette) this.drawVignette(width, height);
+    if (this.startHint && this.startHint.active) this.startHint.setPosition(width / 2, height - 60);
+    // 居中类浮层：全屏遮罩改尺寸，其余元素随中心平移
+    const dx = (width - prevW) / 2;
+    const dy = (height - prevH) / 2;
+    const shift = (objs, moveY) => {
+      if (!objs) return;
+      objs.forEach((o, i) => {
+        if (!o || !o.active) return;
+        if (i === 0 && o.type === 'Rectangle' && o.originX === 0) {
+          o.setSize(width, height);
+          if (o.input) o.input.hitArea.setTo(0, 0, width, height);
+          return;
+        }
+        o.x += dx;
+        if (moveY) o.y += dy;
+      });
+    };
+    shift(this.pauseLayer, true);
+    shift(this.gameOverLayer, true);
+    shift(this.levelUpParts, true);
   }
 
   refreshOwnedBar() {
@@ -1488,7 +1544,11 @@ export default class GameScene extends Phaser.Scene {
     const tierLine = tiers.length ? tiers.map(({ type, tier }) => `${ENEMIES[type].emoji}★${tier}`).join('  ') : '暂无（还没有物种升星）';
 
     const { width, height } = this.scale;
-    const fixed = (obj) => obj.setScrollFactor(0).setDepth(1000);
+    this.gameOverLayer = [];
+    const fixed = (obj) => {
+      this.gameOverLayer.push(obj);
+      return obj.setScrollFactor(0).setDepth(1000);
+    };
     const line = (y, text, size, color = '#ffffff', bold = false) => fixed(this.add.text(width / 2, height / 2 + y, text, {
       fontFamily: FONT, fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal',
     }).setOrigin(0.5));

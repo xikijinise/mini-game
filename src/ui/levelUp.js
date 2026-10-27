@@ -1,8 +1,8 @@
 import { EMOJI_FONT, FONT } from '../textures.js';
 
-const CARD_W = 168;
+const BASE_CARD_W = 168;
 const CARD_H = 260;
-const GAP = 14;
+const BASE_GAP = 14;
 const NEED = 2;
 
 const levelTag = (c) => (c.kind === 'food' ? '' : c.lv === 0 ? '新！' : `Lv ${c.lv} → ${c.lv + 1}`);
@@ -10,6 +10,10 @@ const levelTag = (c) => (c.kind === 'food' ? '' : c.lv === 0 ? '新！' : `Lv ${
 // 升级面板：5 选 2。点选或按 1–5 切换选中，满 2 项后回调 onPick(selected[])
 export function showLevelUp(scene, level, choices, onPick) {
   const { width, height } = scene.scale;
+  const n = Math.max(1, choices.length);
+  // 窄窗口（逻辑宽 < 900）缩小间距与卡宽，保证一排放下不溢出（左右各留 20px）
+  const GAP = width < 900 ? 8 : BASE_GAP;
+  const CARD_W = Math.min(BASE_CARD_W, Math.floor((width - 40 - (n - 1) * GAP) / n));
   const parts = [];
   const fixed = (obj) => {
     parts.push(obj);
@@ -103,4 +107,5 @@ export function showLevelUp(scene, level, choices, onPick) {
     rect.on('pointerdown', () => toggle(i));
     cards.push({ rect, idx: i, choice: c });
   });
+  return parts; // 供场景在窗口缩放时整体平移
 }
