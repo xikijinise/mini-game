@@ -1,20 +1,11 @@
 import Phaser from 'phaser';
 import TitleScene from './scenes/TitleScene.js';
 import GameScene from './scenes/GameScene.js';
+import { pickCanvasSize } from './layout.js';
 
-// 横屏全屏：逻辑高度固定 640（保持原设计的视野/HUD/升级卡比例），
-// 逻辑宽度按视口宽高比算，FIT 后画布正好铺满视口，不再留上下/左右黑边。
-const BASE_H = 640;
-const MIN_W = 800;
-const MAX_W = 1600;
-function fitSize() {
-  const el = document.getElementById('game');
-  const vw = (el && el.clientWidth) || window.innerWidth || 1024;
-  const vh = (el && el.clientHeight) || window.innerHeight || 640;
-  const w = Math.round(Phaser.Math.Clamp(BASE_H * (vw / Math.max(1, vh)), MIN_W, MAX_W));
-  return { width: w, height: BASE_H };
-}
-const initial = fitSize();
+// 同一构建：竖握 → 720×(1136–1600) 竖屏画布；横握/桌面 → 逻辑高 640、宽按视口比，FIT 铺满。
+// 旋转/地址栏伸缩时不刷新页面，只 setGameSize；各场景监听 scale 'resize' 重排 HUD/摇杆/面板。
+const initial = pickCanvasSize();
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -33,18 +24,21 @@ const game = new Phaser.Game({
   scene: [TitleScene, GameScene], // 先开局引导页，再进游戏
 });
 
-// 视口变化（地址栏收起/展开、旋转）时按新宽高比改逻辑宽度；场景监听 scale resize 重排 HUD/摇杆
 let resizeRaf = 0;
 function onViewportResize() {
   cancelAnimationFrame(resizeRaf);
   resizeRaf = requestAnimationFrame(() => {
-    const { width, height } = fitSize();
-    if (Math.abs(width - game.scale.width) > 1 || height !== game.scale.height) game.scale.setGameSize(width, height);
+    const { width, height } = pickCanvasSize();
+    if (Math.abs(width - game.scale.width) > 1 || Math.abs(height - game.scale.height) > 1) game.scale.setGameSize(width, height);
     else game.scale.refresh();
   });
 }
 window.addEventListener('resize', onViewportResize);
-window.addEventListener('orientationchange', () => setTimeout(onViewportResize, 150));
+// 部分 iOS 旋转后 innerWidth/innerHeight 延迟更新：多补两次
+window.addEventListener('orientationchange', () => {
+  setTimeout(onViewportResize, 150);
+  setTimeout(onViewportResize, 500);
+});
 if (window.visualViewport) window.visualViewport.addEventListener('resize', onViewportResize);
 
 // 开发时方便在浏览器控制台里调试，例如 game.scene.keys.GameScene.gainXp(50)

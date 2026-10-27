@@ -1,40 +1,54 @@
 import Phaser from 'phaser';
 import { FONT } from '../textures.js';
+import { isTouchDevice, THUMB_ZONE_H } from '../layout.js';
 
-const BASE_R = 70; // 底盘半径
-const KNOB_R = 32; // 摇杆头半径
+// isTouchDevice 统一放在 layout.js（main.js 也要用），这里转出保持旧引用可用
+export { isTouchDevice };
+
 const DEAD = 0.15; // 死区（占半径比例）
+// 竖屏：底盘大一点（画布缩放更小）；横屏：沿用横屏包尺寸
+const SIZES = { portrait: { base: 80, knob: 36 }, landscape: { base: 70, knob: 32 } };
 
-// 触控/粗指针设备检测：有触点或 pointer: coarse 即视为手机/平板
-export function isTouchDevice() {
-  if (typeof window === 'undefined') return false;
-  const touchPoints = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
-  const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
-  return touchPoints || coarse || 'ontouchstart' in window;
-}
-
-// 横屏浮动虚拟摇杆：只在「左半屏下部」（HUD 下方、宽 45%）按下生效，底盘跟到手指处；
-// 松手回到左下默认位置、方向归零。右半屏与顶栏不抢触摸。
-// 返回 { vector, destroy, setVisible, setEnabled, release }；vector 为归一化方向
+// 浮动虚拟摇杆，按当前画布方向两套布局，relayout(w,h) 时自动切换：
+// - 竖屏（h>w）：下半屏任意处按下生效（无色块），默认位置底部水平居中
+// - 横屏：左半屏下部（HUD 下方、宽 45%）按下生效，默认左下
+// 底盘跟到手指处；松手回默认位置、方向归零。返回 { vector, destroy, setVisible, setEnabled, release, relayout }
 export function createVirtualJoystick(scene, opts = {}) {
   let { width, height } = scene.scale;
+  let portrait = height > width;
+  let BASE_R = SIZES.landscape.base;
   const zone = new Phaser.Geom.Rectangle(0, 0, 0, 0);
   const home = { x: 0, y: 0 };
+  const depth = opts.depth ?? 950;
+
+  const base = scene.add.circle(0, 0, BASE_R, 0x000000, 0.18)
+    .setStrokeStyle(3, 0xffffff, 0.55).setScrollFactor(0).setDepth(depth);
+  const knob = scene.add.circle(0, 0, SIZES.landscape.knob, 0xffffff, 0.55)
+    .setStrokeStyle(3, 0x222222, 0.4).setScrollFactor(0).setDepth(depth + 1);
+
   const layout = (w, h) => {
     width = w;
     height = h;
-    const top = opts.top ?? Math.round(height * 0.3); // 顶栏 / 图标条下方才算摇杆区
-    zone.setTo(0, top, Math.round(width * (opts.widthRatio ?? 0.45)), height - top);
-    home.x = opts.x ?? BASE_R + 60;
-    home.y = opts.y ?? height - BASE_R - 40;
+    portrait = height > width;
+    const s = portrait ? SIZES.portrait : SIZES.landscape;
+    BASE_R = s.base;
+    base.setRadius(s.base);
+    knob.setRadius(s.knob);
+    if (portrait) {
+      const zoneH = Math.round(height / 2); // 可触范围 = 下半屏
+      zone.setTo(0, height - zoneH, width, zoneH);
+      home.x = Math.round(width / 2);
+      home.y = Math.round(height - Math.min(THUMB_ZONE_H / 2 - 10, zoneH / 2));
+    } else {
+      const top = Math.round(height * 0.3); // 顶栏 / 图标条下方才算摇杆区
+      zone.setTo(0, top, Math.round(width * 0.45), height - top);
+      home.x = BASE_R + 60;
+      home.y = height - BASE_R - 40;
+    }
   };
   layout(width, height);
-  const depth = opts.depth ?? 950;
-
-  const base = scene.add.circle(home.x, home.y, BASE_R, 0x000000, 0.18)
-    .setStrokeStyle(3, 0xffffff, 0.55).setScrollFactor(0).setDepth(depth);
-  const knob = scene.add.circle(home.x, home.y, KNOB_R, 0xffffff, 0.55)
-    .setStrokeStyle(3, 0x222222, 0.4).setScrollFactor(0).setDepth(depth + 1);
+  base.setPosition(home.x, home.y);
+  knob.setPosition(home.x, home.y);
 
   const vector = new Phaser.Math.Vector2(0, 0);
   let pointerId = null;
@@ -75,10 +89,17 @@ export function createVirtualJoystick(scene, opts = {}) {
     if (currentlyOver && currentlyOver.length) return; // 点到暂停钮 / 升级卡等不抢
     if (!zone.contains(pointer.x, pointer.y)) return;
     pointerId = pointer.id;
-    place(
-      Phaser.Math.Clamp(pointer.x, BASE_R + 8, zone.right - 8),
-      Phaser.Math.Clamp(pointer.y, zone.top + BASE_R * 0.5, height - BASE_R - 8),
-    );
+    if (portrait) {
+      place(
+        Phaser.Math.Clamp(pointer.x, zone.left + BASE_R + 8, zone.right - BASE_R - 8),
+        Phaser.Math.Clamp(pointer.y, zone.top + BASE_R + 8, zone.bottom - BASE_R - 8),
+      );
+    } else {
+      place(
+        Phaser.Math.Clamp(pointer.x, BASE_R + 8, zone.right - 8),
+        Phaser.Math.Clamp(pointer.y, zone.top + BASE_R * 0.5, height - BASE_R - 8),
+      );
+    }
     track(pointer);
   };
   const onMove = (pointer) => {

@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import { FONT } from '../textures.js';
-import { isTouchDevice } from '../ui/virtualJoystick.js';
+import { isTouchDevice, isPortraitLayout } from '../layout.js';
 
 // 开局引导页（浅色背景）：标题 + 操作提示 + 「开始游戏」+ 右上全屏按钮。
-// 横屏全屏逻辑沿用 main.js 的 FIT + 按视口改逻辑宽；这里监听 scale resize 重排。
+// 竖/横屏同一构建：main.js 旋转时 setGameSize，这里监听 scale resize 重排（竖屏字号放大、提示文案切换）。
 const BG = 0xf4f1e8;
 
 const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
@@ -24,12 +24,8 @@ function toggleFullscreen() {
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
     if (!req) return false;
     const p = req.call(el, { navigationUI: 'hide' });
-    const lock = () => {
-      const o = screen.orientation;
-      if (o && o.lock) o.lock('landscape').catch(() => {});
-    };
-    if (p && p.then) p.then(lock).catch(() => {});
-    else lock();
+    // 竖横都支持：不锁方向，旋转由布局自适应
+    if (p && p.catch) p.catch(() => {});
     return true;
   } catch (e) {
     return false;
@@ -75,7 +71,8 @@ export default class TitleScene extends Phaser.Scene {
     this.sub = this.add.text(0, 0, '自动攻击 · 捡晶体升级 · 活下去', {
       fontFamily: FONT, fontSize: '22px', color: '#6b6457',
     }).setOrigin(0.5);
-    this.hint = this.add.text(0, 0, touch ? '触控：左侧摇杆移动' : '桌面：WASD / 方向键移动', {
+    this.touch = touch;
+    this.hint = this.add.text(0, 0, '', {
       fontFamily: FONT, fontSize: '24px', color: '#3a362e', align: 'center',
     }).setOrigin(0.5);
 
@@ -111,6 +108,7 @@ export default class TitleScene extends Phaser.Scene {
     } else if (touch) {
       this.fsNote = this.add.text(0, 0, '提示：当前浏览器不支持全屏，可用系统横屏或「添加到主屏幕」获得全屏体验', {
         fontFamily: FONT, fontSize: '18px', color: '#8a8273', align: 'center',
+        wordWrap: { width: 600, useAdvancedWrap: true },
       }).setOrigin(0.5);
     }
 
@@ -141,20 +139,27 @@ export default class TitleScene extends Phaser.Scene {
   layout() {
     const { width, height } = this.scale;
     const cx = width / 2;
+    const portrait = isPortraitLayout(this);
+    const k = portrait ? 1.3 : 1; // 竖屏画布缩放更小，放大引导页元素
     this.cameras.main.setSize(width, height);
+    this.hint.setText(!this.touch ? '桌面：WASD / 方向键移动' : portrait ? '触控：下半屏摇杆移动\n横竖屏都能玩' : '触控：左侧摇杆移动\n横竖屏都能玩');
+    [this.title, this.sub, this.hint, this.startBtn].forEach((o) => o.setScale(k));
+    if (this.fsBtn) this.fsBtn.setScale(k);
+    if (this.fsNote) this.fsNote.setScale(k).setWordWrapWidth(Math.round((width - 60) / k), true);
     this.bg.clear();
     this.bg.fillStyle(BG, 1).fillRect(0, 0, width, height);
     // 简单装饰：浅色描边卡片
-    const cw = Math.min(width - 80, 720);
-    const ch = 420;
+    const cw = Math.min(width - 60, 720);
+    const ch = 420 * k + 40 * (k - 1);
     this.bg.fillStyle(0xfffdf7, 1).fillRoundedRect(cx - cw / 2, height / 2 - ch / 2 - 10, cw, ch, 24);
     this.bg.lineStyle(3, 0xd9d2c2, 1).strokeRoundedRect(cx - cw / 2, height / 2 - ch / 2 - 10, cw, ch, 24);
 
-    this.title.setPosition(cx, height / 2 - 150);
-    this.sub.setPosition(cx, height / 2 - 88);
-    this.hint.setPosition(cx, height / 2 - 30);
-    this.startBtn.setPosition(cx, height / 2 + 80);
-    if (this.fsBtn) this.fsBtn.setPosition(width - 100, 56);
-    if (this.fsNote) this.fsNote.setPosition(cx, height - 36);
+    const cy = height / 2 - 10;
+    this.title.setPosition(cx, cy - 140 * k);
+    this.sub.setPosition(cx, cy - 78 * k);
+    this.hint.setPosition(cx, cy - 10 * k);
+    this.startBtn.setPosition(cx, cy + 100 * k);
+    if (this.fsBtn) this.fsBtn.setPosition(width - 100 * k, 56 * k);
+    if (this.fsNote) this.fsNote.setPosition(cx, height - 50 * k);
   }
 }
