@@ -7,7 +7,6 @@ import { pickCanvasSize, isMobileDevice } from './layout.js';
 // 旋转/地址栏伸缩时不刷新页面，只 setGameSize；各场景监听 scale 'resize' 重排 HUD/摇杆/面板。
 const initial = pickCanvasSize();
 const mobile = isMobileDevice();
-document.documentElement.dataset.device = mobile ? 'mobile' : 'desktop';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -23,7 +22,8 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [TitleScene, GameScene], // 先开局引导页，再进游戏
+  // 手机：先浅色开局引导页（全屏钮/触控提示）再进游戏；电脑：同 main 直接进游戏（键鼠，无手机引导/全屏钮）
+  scene: mobile ? [TitleScene, GameScene] : [GameScene],
 });
 
 let resizeRaf = 0;

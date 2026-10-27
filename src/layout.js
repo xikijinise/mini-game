@@ -12,33 +12,12 @@ export const THUMB_ZONE_H = 280; // 竖屏底部「手指区」高度：镜头�
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-// 设备判定（页面加载时算一次并缓存，避免触控笔记本/外接键盘中途切换布局）：
-// 1) URL ?device=desktop|mobile 强制（手验用）
-// 2) 主指针为精确指针 (pointer: fine)，或接有精确指针且 UA 非移动端 → 电脑（含触控笔记本、带触屏的一体机）
-// 3) 主指针为粗指针 (pointer: coarse) / 有触点 / 移动 UA → 手机/平板
-// 4) 都判不出（老浏览器无 matchMedia 或 pointer: none）→ 仅按 UA 兜底，默认电脑
-const MOBILE_UA = /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle|BlackBerry|Opera Mini|IEMobile|HarmonyOS/i;
+// 设备判定：规则唯一来源在 index.html 头部脚本（尽早决定外框/元信息/手势拦截），这里只读结果。
+// 默认电脑；仅 ?device=mobile、明确移动 UA（含 iPadOS 伪装 Mac+多触点）、或主指针 coarse 且无任何 fine 指针 → 手机。
 let cachedMobile = null;
 function detectMobile() {
   if (typeof window === 'undefined') return false;
-  try {
-    const q = new URLSearchParams(window.location.search).get('device');
-    if (q === 'desktop' || q === 'pc') return false;
-    if (q === 'mobile' || q === 'phone') return true;
-  } catch (e) { /* ignore */ }
-  const nav = typeof navigator !== 'undefined' ? navigator : {};
-  const ua = nav.userAgent || '';
-  // iPadOS 13+ 桌面版 UA 伪装成 Mac：Macintosh + 多触点视为平板
-  const uaMobile = MOBILE_UA.test(ua) || (/Macintosh/.test(ua) && nav.maxTouchPoints > 1);
-  const mm = typeof window.matchMedia === 'function' ? (q) => window.matchMedia(q).matches : null;
-  if (mm) {
-    if (mm('(pointer: fine)')) return false;
-    // 主指针粗、但同时接着精确指针且 UA 不是移动端（Windows 平板模式的触控本等）→ 仍当电脑
-    if (mm('(any-pointer: fine)') && !uaMobile) return false;
-    if (mm('(pointer: coarse)')) return true;
-  }
-  if (nav.maxTouchPoints > 0 && uaMobile) return true;
-  return uaMobile;
+  return window.__MG_DEVICE__ === 'mobile';
 }
 export function isMobileDevice() {
   if (cachedMobile === null) cachedMobile = detectMobile();
