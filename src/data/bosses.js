@@ -27,7 +27,7 @@ export const BOSSES = {
     killMsg: '击退狼王！',
   },
   elephantKing: {
-    name: '象王', emoji: '🐘', art: 'elephant', size: 120, boss: true,
+    name: '象王', emoji: '🐘', art: 'elephant', size: 80, boss: true,
     hp: 12000, speed: 85, damage: 40, gem: 'boss',
     skill: { type: 'stampede', firstDelay: 3000, interval: 7000, windup: 1200, warnWidth: 90,
       chargeDistance: 650, chargeSpeedMul: 4.0, chargeDamage: 50, dmgMul: 1.25, knockback: 120,
