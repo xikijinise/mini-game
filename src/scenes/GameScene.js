@@ -392,7 +392,7 @@ export default class GameScene extends Phaser.Scene {
       if (!e.def.boss) spd *= bushFactor(this, e.x, footY); // 怪进灌木同样减速
       this.runBehavior(e, p, spd);
       this.zTick(e, p);
-      if (Math.abs(e.body.velocity.x) > 5) this.setEnemyFlip(e, e.body.velocity.x < 0); // 贴图默认朝右
+      if (e.state !== 'windup' && Math.abs(e.body.velocity.x) > 5) this.setEnemyFlip(e, e.body.velocity.x < 0); // 贴图默认朝右
     }
   }
 
@@ -454,7 +454,9 @@ export default class GameScene extends Phaser.Scene {
     }
     if (e.state === 'windup') {
       e.setVelocity(0, 0);
+      this.windupPose(e, 'rabbitCrouch', 1 - (e.stateUntil - this.elapsed) / z.windup);
       if (this.elapsed < e.stateUntil) return;
+      this.endPose(e);
       e.state = 'move';
       e.moveStart = this.elapsed;
     }
@@ -561,9 +563,15 @@ export default class GameScene extends Phaser.Scene {
       } else {
         e.setVelocity(0, 0);
       }
-      e.rotation = Math.sin(t / 30) * 0.2;
-      if (!e.flashUntil) e.setTint(0xffa726);
       const zr = e.zs;
+      const pose = zr && { lineDash: e.bhType === 'charge' ? 'boarRecoil' : 'wolfLean', tongue: 'frogTongue',
+        roarPounce: t < e.windStart + zr.roarMs ? 'tigerRoar' : 'tigerStalk' }[zr.type];
+      if (pose && !e.def.boss) {
+        this.windupPose(e, pose, Phaser.Math.Clamp(1 - (e.stateUntil - t) / (b.windup || 1), 0, 1));
+      } else { // Boss 保留原蓄力表现
+        e.rotation = Math.sin(t / 30) * 0.2;
+        if (!e.flashUntil) e.setTint(0xffa726);
+      }
       if (zr && zr.type === 'roarPounce' && !e.roared && t >= e.windStart + zr.roarMs) {
         // 虎·威势：吼圈结束判定威慑，锁扑向并画落点圈
         e.roared = true;
@@ -578,9 +586,8 @@ export default class GameScene extends Phaser.Scene {
         this.warnCircle(rx + e.moveDir.x * d, ry + e.moveDir.y * d, zr.radius, 0xff1744, Math.max(100, e.stateUntil - t) + 250);
       }
       if (t < e.stateUntil) return;
-      if (!e.flashUntil) this.restoreTint(e);
+      this.endPose(e);
       this.clearWarn(e);
-      e.rotation = 0;
       e.state = 'move';
       e.zHit = false;
       if (!e.dirLocked) e.moveDir.set(p.x - e.body.center.x, p.y - e.body.center.y).normalize(); // 起冲时锁定方向，途中不转向

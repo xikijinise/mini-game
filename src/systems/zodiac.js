@@ -96,6 +96,78 @@ const methods = {
     this.updateZProj();
   },
 
+  // ---------- 本体前摇姿态（可欣：每种一眼能认，禁止通用 sin(t/30)+橙闪） ----------
+  restScale(e) { return e.baseScale * (e.speedMul > 1 && e.bh && e.bh.scale ? e.bh.scale : 1); },
+  // 前倾：贴图默认朝右，朝右前倾 = 顺时针（+），朝左镜像
+  lean(e, dx, amt) { this.setEnemyFlip(e, dx < 0); e.rotation = dx < 0 ? -amt : amt; },
+  windupPose(e, kind, k) {
+    const t = this.elapsed;
+    const S = this.restScale(e);
+    const dx = e.moveDir && e.moveDir.lengthSq() ? e.moveDir.x : (this.player.x - e.x);
+    switch (kind) {
+      case 'mouseBite': { // 极短顿 + 头前探：scaleX 一瞬拉长，无闪
+        const a = Math.sin(Math.PI * k);
+        e.setScale(S * (1 + 0.22 * a), S * (1 - 0.08 * a));
+        this.lean(e, dx, 0.18 * a);
+        break;
+      }
+      case 'rabbitCrouch': // 压矮蓄力
+        e.rotation = 0;
+        e.setScale(S * (1 + 0.18 * k), S * (1 - 0.32 * k));
+        break;
+      case 'frogTongue': // 绿色慢抖
+        e.setTint(0x76ff03);
+        e.rotation = Math.sin(t / 90) * 0.09;
+        e.setScale(S * (1 + 0.05 * Math.sin(t / 90)), S);
+        break;
+      case 'foxClaw': // 侧向左右轻晃
+        e.rotation = Math.sin(t / 55) * 0.32;
+        e.setScale(S);
+        break;
+      case 'foxThrow': { // 原地点头：短促前俯
+        const n = Math.abs(Math.sin(t / 40));
+        this.lean(e, dx, 0.28 * n);
+        e.setScale(S, S * (1 - 0.1 * n));
+        break;
+      }
+      case 'wolfLean': // 固定前倾 + 淡红
+        e.setTint(0xff8a80);
+        this.lean(e, dx, 0.16 + 0.1 * k);
+        break;
+      case 'boarRecoil': // 先后坐（后仰后退）再前倾 + 深红
+        e.setTint(0xc62828);
+        if (k < 0.55) {
+          this.lean(e, dx, -0.2 * (k / 0.55));
+          if (e.moveDir) e.setVelocity(-e.moveDir.x * 45, -e.moveDir.y * 45);
+          e.setScale(S * 0.94, S * 1.04);
+        } else {
+          this.lean(e, dx, 0.3 * ((k - 0.55) / 0.45));
+          e.setScale(S * 1.06, S * 0.96);
+        }
+        break;
+      case 'bearRaise': // 双臂上抬：整体胀大 + 大幅慢晃
+        e.setScale(S * (1 + 0.14 * k), S * (1 + 0.2 * k));
+        e.rotation = Math.sin(t / 70) * 0.35 * k;
+        break;
+      case 'tigerRoar': // 黄色怒震：大幅高频
+        e.setTint(0xffd600);
+        e.rotation = Math.sin(t / 16) * 0.3;
+        e.setScale(S * 1.1, S * 1.1);
+        break;
+      case 'tigerStalk': // 扑段绕侧：压低身子，不闪色
+        if (!e.flashUntil) this.restoreTint(e);
+        e.setScale(S * 1.06, S * 0.9);
+        this.lean(e, dx, 0.12);
+        break;
+      default: break;
+    }
+  },
+  endPose(e) {
+    e.rotation = 0;
+    e.setScale(this.restScale(e));
+    if (!e.flashUntil) this.restoreTint(e);
+  },
+
   // ---------- 预警绘制 ----------
   warnFan(x, y, ang, r, arcDeg, color, ms) {
     const g = this.add.graphics().setDepth(2);
@@ -169,7 +241,9 @@ const methods = {
     }
     if (e.zState === 'windup') {
       e.setVelocity(0, 0);
+      this.windupPose(e, 'mouseBite', 1 - (e.zUntil - t) / z.windup);
       if (t < e.zUntil) return;
+      this.endPose(e);
       e.zNext = t + z.cd;
       this.flashFx(x + Math.cos(e.zAng) * 20, y + Math.sin(e.zAng) * 20, 14, 0xffeb3b);
       e.zState = 'flee'; e.zUntil = t + z.fleeMs;
@@ -202,9 +276,9 @@ const methods = {
       } else return;
     }
     e.setVelocity(0, 0);
-    e.rotation = Math.sin(t / 30) * 0.15;
+    this.windupPose(e, e.zState === 'claw' ? 'foxClaw' : 'foxThrow', 0);
     if (t < e.zUntil) return;
-    e.rotation = 0;
+    this.endPose(e);
     e.zNext = t + z.cd;
     if (e.zState === 'claw') {
       this.flashFx(x + Math.cos(e.zAng) * 30, y + Math.sin(e.zAng) * 30, 22, 0xff9800);
@@ -245,7 +319,9 @@ const methods = {
       this.warnBar(x, y, e.zAng, z.length, z.width, 0x76ff03, z.windup);
     }
     e.setVelocity(0, 0);
+    this.windupPose(e, 'frogTongue', 0);
     if (t < e.zUntil) return;
+    this.endPose(e);
     e.zNext = t + z.cd; e.zState = 'idle'; e.state = 'chase';
     const g = this.warnBar(x, y, e.zAng, z.length, z.width * 0.6, 0x64dd17, 0);
     this.tweens.add({ targets: g, alpha: 0, duration: 260, onComplete: () => g.destroy() });
@@ -267,9 +343,9 @@ const methods = {
       e.zWarn = this.warnCircle(x, y, r, 0xff1744, z.windup);
     }
     e.setVelocity(0, 0);
-    e.rotation = Math.sin(t / 30) * 0.2;
+    this.windupPose(e, 'bearRaise', 1 - (e.zUntil - t) / z.windup);
     if (t < e.zUntil) return;
-    e.rotation = 0;
+    this.endPose(e);
     e.zState = 'idle'; e.zNext = t + z.cd * (enr ? z.enrageCdMul : 1);
     this.cameras.main.shake(140, 0.008);
     this.flashFx(x, y, r, 0xff5722);
