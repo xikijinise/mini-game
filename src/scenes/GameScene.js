@@ -8,6 +8,7 @@ import { WEAPONS, WEAPON_MAX_LEVEL } from '../data/weapons.js';
 import { STAT_BOOSTS, WEAPON_OVER } from '../data/statBoosts.js';
 import { PASSIVES } from '../data/passives.js';
 import { showLevelUp } from '../ui/levelUp.js';
+import { installZodiac } from '../systems/zodiac.js';
 import { createVirtualJoystick, createPauseButton, isTouchDevice } from '../ui/virtualJoystick.js';
 import { thumbZoneHeight } from '../layout.js';
 import { spawnIntervalMs, spawnCount, clampSpawnCount } from '../data/waves.js';
@@ -108,6 +109,7 @@ export default class GameScene extends Phaser.Scene {
     this.frostBolts = this.physics.add.group();
     this.arrows = this.physics.add.group();
     this.gems = this.add.group();
+    this.zInitScene();
 
     this.physics.add.collider(this.enemies, this.enemies);
 
@@ -193,6 +195,8 @@ export default class GameScene extends Phaser.Scene {
     this.updateArrows();
     this.updateGems(dt);
     this.updateBossFight();
+    this.updateDebuffs();
+    this.resolveHits();
     this.flushTierMessages();
     if (this.stats.regen > 0) this.heal(this.stats.regen * dt / 1000);
     if (this.hurtUntil && this.elapsed > this.hurtUntil) {
@@ -228,7 +232,7 @@ export default class GameScene extends Phaser.Scene {
     const footY = p.y + p.displayHeight / 2;
     const bush = bushFactor(this, p.x, footY);
     this.inBush = bush < 1;
-    const spd = this.stats.speed * bush; // 灌木内临时减速 ×0.6，不改 stats.speed
+    const spd = this.stats.speed * bush * this.debuffSpeedMul(); // 灌木内临时减速 ×0.6，不改 stats.speed
     p.setVelocity(dir.x * spd, dir.y * spd);
     p.setDepth(ySortDepth(footY)); // 按脚底 y 排序，可走到树冠后
 
@@ -244,18 +248,20 @@ export default class GameScene extends Phaser.Scene {
   onPlayerHit(_, enemy) {
     if (this.over || this.elapsed < this.invulnUntil) return;
     // Boss 冲撞/践踏途中命中：用技能伤害替代接触伤害，并击退玩家
+    // 衡岚 zodiac §2：有 dmgMul 时 = e.damage×dmgMul（e.damage 已含 lapMult.dmg），否则回退 chargeDamage×dmgMul(lap)
     const sk = enemy.def.boss && enemy.state === 'move' ? enemy.bh : null;
-    if (sk && sk.chargeDamage) {
-      this.hurtPlayer(Math.round(sk.chargeDamage * enemy.dmgMul), enemy.body.center.x, enemy.body.center.y, sk.knockback);
+    if (sk && (sk.dmgMul || sk.chargeDamage)) {
+      const dmg = sk.dmgMul ? this.skillDamage(enemy, sk.dmgMul) : Math.round(sk.chargeDamage * enemy.dmgMul);
+      this.queueHit(dmg, { x: enemy.body.center.x, y: enemy.body.center.y, knockback: sk.knockback, debuff: sk.debuff });
     } else {
-      this.hurtPlayer(enemy.damage);
+      this.queueHit(enemy.damage); // 接触伤害：与同帧技能取高
     }
   }
 
   // 统一受伤入口：接触伤害 / Boss 技能伤害；fromX/fromY + knockback 时把玩家推开
   hurtPlayer(dmg, fromX, fromY, knockback) {
     if (this.over || this.elapsed < this.invulnUntil) return;
-    dmg = Math.max(1, Math.round(dmg - (this.stats.defense || 0)));
+    dmg = Math.max(1, Math.round(dmg * this.vulnMul() - (this.stats.defense || 0))); // 易伤先乘再扣防
     this.stats.hp -= dmg;
     if (knockback && fromX !== undefined) {
       const a = Phaser.Math.Angle.Between(fromX, fromY, this.player.x, this.player.y);
@@ -354,6 +360,7 @@ export default class GameScene extends Phaser.Scene {
     // 行为钩子（衡岚 §C）：def.behavior.type，没有则 chase。初始相位随机 0～interval，避免整群同步
     e.maxHp = e.hp;
     this.initBehavior(e, def.skill ? { ...def.skill } : def.behavior); // Boss 技能拷一份，二阶段会改写
+    this.zInitEnemy(e);
     if (def.boss) e.body.pushable = false;
     return e;
   }
@@ -384,6 +391,7 @@ export default class GameScene extends Phaser.Scene {
       let spd = (e.slowUntil && this.elapsed < e.slowUntil) ? e.speed * (e.slowFactor || 0.5) : e.speed;
       if (!e.def.boss) spd *= bushFactor(this, e.x, footY); // 怪进灌木同样减速
       this.runBehavior(e, p, spd);
+      this.zTick(e, p);
       if (Math.abs(e.body.velocity.x) > 5) this.setEnemyFlip(e, e.body.velocity.x < 0); // 贴图默认朝右
     }
   }
@@ -430,11 +438,25 @@ export default class GameScene extends Phaser.Scene {
   // hop：平时直追；每 hopInterval 朝玩家锁定方向蹦 hopDistance（速度 ×hopSpeedMul），空中抬高 + scaleY 拉伸
   hopEnemy(e, p, spd) {
     const b = e.bh;
+    const z = e.zs;
     if (e.state === 'chase' && this.elapsed >= e.nextActAt) {
-      e.state = 'move';
-      e.moveDir.set(p.x - e.body.center.x, p.y - e.body.center.y).normalize();
+      // 兔·迷踪蹦：起跳前 windup，落点随机偏移并画淡圈
+      const j = z ? z.jitter : 0;
+      e.moveDir.set(p.x + (Math.random() * 2 - 1) * j - e.body.center.x, p.y + (Math.random() * 2 - 1) * j - e.body.center.y).normalize();
+      if (z) {
+        e.state = 'windup';
+        e.stateUntil = this.elapsed + z.windup;
+        const { x, y } = e.body.center;
+        this.warnCircle(x + e.moveDir.x * b.hopDistance, y + e.moveDir.y * b.hopDistance, z.radius, 0xe040fb, z.windup + 450, 0.12);
+      } else e.state = 'move';
       e.moveStart = this.elapsed;
       e.moveDur = (b.hopDistance / Math.max(1, spd * b.hopSpeedMul)) * 1000; // 减速时蹦得慢但距离不变
+    }
+    if (e.state === 'windup') {
+      e.setVelocity(0, 0);
+      if (this.elapsed < e.stateUntil) return;
+      e.state = 'move';
+      e.moveStart = this.elapsed;
     }
     if (e.state === 'move') {
       const k = (this.elapsed - e.moveStart) / e.moveDur;
@@ -443,6 +465,15 @@ export default class GameScene extends Phaser.Scene {
         e.nextActAt = this.elapsed + b.hopInterval;
         e.setScale(e.baseScale);
         this.setEnemyLift(e, 0);
+        if (z) { // 落地踩圈伤 + 短隐身残影（α0.4，自动瞄准跳过）
+          const { x, y } = e.body.center;
+          this.flashFx(x, y, z.radius, 0xe040fb);
+          if (this.inCircle(x, y, z.radius)) this.queueHit(this.skillDamage(e, z.dmgMul), {});
+          const ghost = this.add.image(e.x, e.y, e.texture.key).setOrigin(0.5, 1).setScale(e.scaleX, e.scaleY).setAlpha(0.5).setTint(0xe040fb).setDepth(e.depth);
+          this.tweens.add({ targets: ghost, alpha: 0, duration: z.blinkMs, onComplete: () => ghost.destroy() });
+          e.setAlpha(0.4);
+          e.untargetableUntil = this.elapsed + z.blinkMs;
+        }
       } else {
         const v = spd * b.hopSpeedMul;
         e.setVelocity(e.moveDir.x * v, e.moveDir.y * v);
@@ -503,10 +534,18 @@ export default class GameScene extends Phaser.Scene {
         e.state = 'windup';
         e.stateUntil = t + (b.windup || 0);
         e.circleSide = Math.random() < 0.5 ? 1 : -1; // pounce：预警时绕玩家的方向
-        if (b.warnWidth) { // Boss：预警时就锁方向，并画全长红色预警带
+        e.windStart = t;
+        e.roared = false;
+        e.dirLocked = false;
+        const z = e.zs;
+        const ww = b.warnWidth || (z && z.type === 'lineDash' ? z.warnWidth : 0);
+        if (ww) { // Boss / 狼犬袭 / 猪蛮冲：预警时就锁方向，并画全长红色预警带
           e.moveDir.set(p.x - e.body.center.x, p.y - e.body.center.y).normalize();
-          this.drawChargeWarn(e, b);
+          this.drawChargeWarn(e, b, b[K.dist], ww);
+          e.dirLocked = true;
         }
+        if (b.fearRadius) this.dragonFear(e, b); // 象王：每次践踏 windup 放龙威
+        if (z && z.type === 'roarPounce') this.warnCircle(e.body.center.x, e.body.center.y, z.roarRadius, 0xffd600, z.roarMs, 0.12);
       } else {
         return this.physics.moveToObject(e, p, spd);
       }
@@ -524,15 +563,35 @@ export default class GameScene extends Phaser.Scene {
       }
       e.rotation = Math.sin(t / 30) * 0.2;
       if (!e.flashUntil) e.setTint(0xffa726);
+      const zr = e.zs;
+      if (zr && zr.type === 'roarPounce' && !e.roared && t >= e.windStart + zr.roarMs) {
+        // 虎·威势：吼圈结束判定威慑，锁扑向并画落点圈
+        e.roared = true;
+        const { x: rx, y: ry } = e.body.center;
+        this.flashFx(rx, ry, zr.roarRadius, 0xffd600);
+        if (this.inCircle(rx, ry, zr.roarRadius)) this.addDebuff('fear', zr.debuff.fear);
+        e.moveDir.set(p.x - rx, p.y - ry).normalize();
+        e.dirLocked = true;
+        e.landX = p.x; e.landY = p.y; // 落点 = 吼完瞬间玩家位置（扑距内）
+        const d = Math.min(b[K.dist], Phaser.Math.Distance.Between(rx, ry, p.x, p.y));
+        e.landDist = d;
+        this.warnCircle(rx + e.moveDir.x * d, ry + e.moveDir.y * d, zr.radius, 0xff1744, Math.max(100, e.stateUntil - t) + 250);
+      }
       if (t < e.stateUntil) return;
       if (!e.flashUntil) this.restoreTint(e);
       this.clearWarn(e);
       e.rotation = 0;
       e.state = 'move';
-      if (!b.warnWidth) e.moveDir.set(p.x - e.body.center.x, p.y - e.body.center.y).normalize(); // 起冲时锁定方向，途中不转向
+      e.zHit = false;
+      if (!e.dirLocked) e.moveDir.set(p.x - e.body.center.x, p.y - e.body.center.y).normalize(); // 起冲时锁定方向，途中不转向
       e.moveStart = t;
-      e.moveDur = (b[K.dist] / Math.max(1, spd * b[K.mul])) * 1000;
+      const mvDist = e.bhType === 'pounce' && e.landDist ? e.landDist : b[K.dist];
+      e.moveDur = (mvDist / Math.max(1, spd * b[K.mul])) * 1000;
       if (b.shockwaveRadius) this.drawShockWarn(e, b, e.moveDur);
+      if (e.bhType === 'leap' && e.zs) { // 蛙：落点淡圈
+        const { x: lx, y: ly } = e.body.center;
+        this.warnCircle(lx + e.moveDir.x * mvDist, ly + e.moveDir.y * mvDist, e.zs.landRadius, 0x76ff03, e.moveDur + 100, 0.12);
+      }
     }
     if (e.state === 'move') {
       const k = (t - e.moveStart) / e.moveDur;
@@ -542,9 +601,17 @@ export default class GameScene extends Phaser.Scene {
         e.setVelocity(e.moveDir.x * v, e.moveDir.y * v);
         e.rotation = 0;
         if (e.bhType === 'leap') this.setEnemyLift(e, Math.round(Math.sin(Math.PI * k) * 18));
+        const zl = e.zs;
+        if (zl && zl.type === 'lineDash' && !e.zHit) { // 犬袭 / 蛮冲：路径带伤（碰撞箱 ×hitMul）
+          const { x: cx, y: cy } = e.body.center;
+          if (Phaser.Math.Distance.Between(cx, cy, p.x, p.y) <= (e.body.width / 2) * zl.hitMul + 14) {
+            e.zHit = this.queueHit(this.skillDamage(e, zl.dmgMul), { x: cx, y: cy, knockback: zl.knockback, debuff: zl.debuff });
+          }
+        }
         return;
       }
       if (e.bhType === 'leap') this.setEnemyLift(e, 0);
+      this.zLand(e, b);
       if (b.shockwaveRadius) this.stampedeShock(e, b);
       e.state = 'recover';
       e.stateUntil = t + (b.recover || 0);
@@ -553,7 +620,27 @@ export default class GameScene extends Phaser.Scene {
       e.setVelocity(0, 0);
       if (t < e.stateUntil) return;
       e.state = 'chase';
+      e.dirLocked = false;
+      e.landDist = 0;
       e.nextActAt = t + b.interval;
+    }
+  }
+
+  // 蛙跳扑 / 虎扑杀 落地判定
+  zLand(e, b) {
+    const z = e.zs;
+    if (!z) return;
+    const { x, y } = e.body.center;
+    if (z.type === 'tongue') {
+      this.flashFx(x, y, z.landRadius, 0x76ff03);
+      if (this.inCircle(x, y, z.landRadius)) this.queueHit(this.skillDamage(e, z.landDmgMul), {});
+    } else if (z.type === 'roarPounce') {
+      this.flashFx(x, y, z.radius, 0xff1744);
+      this.cameras.main.shake(100, 0.006);
+      if (this.inCircle(x, y, z.radius)) {
+        const mul = z.dmgMul * (this.hasDebuff('fear') ? z.fearBonus : 1);
+        this.queueHit(this.skillDamage(e, mul), { x, y, knockback: 30, debuff: { slow: { mul: 0.7, ms: 800 } } });
+      }
     }
   }
 
@@ -576,6 +663,7 @@ export default class GameScene extends Phaser.Scene {
     let best = null;
     let bestD = maxDist * maxDist;
     for (const e of this.enemies.getChildren()) {
+      if (e.untargetableUntil) continue; // 兔迷踪：自动瞄准跳过
       const d = Phaser.Math.Distance.Squared(e.body.center.x, e.body.center.y, this.player.x, this.player.y);
       if (d < bestD) {
         best = e;
@@ -606,6 +694,7 @@ export default class GameScene extends Phaser.Scene {
         this.onBossKilled(e, cx, cy);
       } else {
         this.dropGem(cx, cy, e.gemOverride || e.def.gem);
+        (e.stolen || []).forEach((tier, i) => this.dropGem(cx + 12 * (i + 1), cy - 6, tier)); // 鼠偷的晶原样掉回
         if (!e.summoned) this.countKill(e.type);
       }
       this.clearWarn(e);
@@ -744,6 +833,7 @@ export default class GameScene extends Phaser.Scene {
     e.angryTint = 0xff6e6e;
     if (!e.flashUntil) e.setTint(e.angryTint);
     if (sk.phase2Msg) this.flashMessage(sk.phase2Msg);
+    if (sk.fearRadius) this.dragonFear(e, sk);
   }
 
   // 狼王 summon：chase → windup（停住嚎叫）→ 在身边召唤狼（不计击杀成长，只掉小晶）
@@ -776,12 +866,12 @@ export default class GameScene extends Phaser.Scene {
   }
 
   // 冲撞/践踏预警带：从 Boss 沿锁定方向画 chargeDistance 长、warnWidth 宽的红带
-  drawChargeWarn(e, b) {
+  drawChargeWarn(e, b, len = b.chargeDistance, w = b.warnWidth) {
     this.clearWarn(e);
     const g = this.add.graphics().setDepth(2);
     const { x, y } = e.body.center;
-    g.fillStyle(0xff1744, 0.22).fillRect(0, -b.warnWidth / 2, b.chargeDistance, b.warnWidth);
-    g.lineStyle(2, 0xff1744, 0.5).strokeRect(0, -b.warnWidth / 2, b.chargeDistance, b.warnWidth);
+    g.fillStyle(0xff1744, 0.22).fillRect(0, -w / 2, len, w);
+    g.lineStyle(2, 0xff1744, 0.5).strokeRect(0, -w / 2, len, w);
     g.setPosition(x, y).setRotation(e.moveDir.angle());
     e.warnGfx = g;
   }
@@ -807,11 +897,19 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
+  // 象王·龙威：R 内玩家威慑（移速 / 攻速下降）
+  dragonFear(e, b) {
+    const { x, y } = e.body.center;
+    const ring = this.add.circle(x, y, 30, 0xffd600, 0).setStrokeStyle(4, 0xffd600, 0.8).setDepth(2);
+    this.tweens.add({ targets: ring, radius: b.fearRadius, alpha: 0, duration: 450, onComplete: () => ring.destroy() });
+    if (this.inCircle(x, y, b.fearRadius)) this.addDebuff('fear', b.fear);
+  }
+
   stampedeShock(e, b) {
     const { x, y } = e.body.center;
     this.cameras.main.shake(180, 0.01);
     if (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) <= b.shockwaveRadius) {
-      this.hurtPlayer(Math.round(b.shockwaveDamage * e.dmgMul), x, y, 40);
+      this.queueHit(b.shockDmgMul ? this.skillDamage(e, b.shockDmgMul) : Math.round(b.shockwaveDamage * e.dmgMul), { x, y, knockback: 40 });
     }
   }
 
@@ -821,7 +919,7 @@ export default class GameScene extends Phaser.Scene {
     const lv = this.weaponLv.knife;
     if (!lv || (this.cooldowns.knife -= dt) > 0) return;
     const s = this.weaponRuntime('knife');
-    this.cooldowns.knife = s.cd * this.stats.cooldown;
+    this.cooldowns.knife = s.cd * this.cdMul();
 
     const p = this.player;
     const target = this.nearestEnemy(520);
@@ -913,7 +1011,7 @@ export default class GameScene extends Phaser.Scene {
     const lv = this.weaponLv.spike;
     if (!lv || (this.cooldowns.spike -= dt) > 0) return;
     const s = this.weaponRuntime('spike');
-    this.cooldowns.spike = s.cd * this.stats.cooldown;
+    this.cooldowns.spike = s.cd * this.cdMul();
     const p = this.player;
     const n = s.count || 1;
     const pts = [];
@@ -969,7 +1067,7 @@ export default class GameScene extends Phaser.Scene {
     const lv = this.weaponLv.lightning;
     if (!lv || (this.cooldowns.lightning -= dt) > 0) return;
     const s = this.weaponRuntime('lightning');
-    this.cooldowns.lightning = s.cd * this.stats.cooldown;
+    this.cooldowns.lightning = s.cd * this.cdMul();
 
     const view = this.cameras.main.worldView;
     const onScreen = this.enemies.getChildren().filter((e) => view.contains(e.body.center.x, e.body.center.y));
@@ -1010,7 +1108,7 @@ export default class GameScene extends Phaser.Scene {
     const lv = this.weaponLv.frost;
     if (!lv || (this.cooldowns.frost -= dt) > 0) return;
     const s = this.weaponRuntime('frost');
-    this.cooldowns.frost = s.cd * this.stats.cooldown;
+    this.cooldowns.frost = s.cd * this.cdMul();
 
     const p = this.player;
     const target = this.nearestEnemy(560);
@@ -1046,7 +1144,7 @@ export default class GameScene extends Phaser.Scene {
     const lv = this.weaponLv.arrow;
     if (!lv || (this.cooldowns.arrow -= dt) > 0) return;
     const s = this.weaponRuntime('arrow');
-    this.cooldowns.arrow = s.cd * this.stats.cooldown;
+    this.cooldowns.arrow = s.cd * this.cdMul();
 
     const p = this.player;
     const target = this.nearestEnemy(600);
@@ -1118,7 +1216,7 @@ export default class GameScene extends Phaser.Scene {
     const lv = this.weaponLv.boomerang;
     if (!lv || (this.cooldowns.boomerang -= dt) > 0) return;
     const s = this.weaponRuntime('boomerang');
-    this.cooldowns.boomerang = s.cd * this.stats.cooldown;
+    this.cooldowns.boomerang = s.cd * this.cdMul();
     const maxRange = s.maxRange ?? s.range ?? 200;
     const outSpeed = s.outSpeed ?? 400;
     const target = this.nearestEnemy(maxRange + 80);
@@ -1150,7 +1248,7 @@ export default class GameScene extends Phaser.Scene {
       this.cooldowns.slash = 120; // 附近没怪就别空挥，稍后再看
       return;
     }
-    this.cooldowns.slash = s.cd * this.stats.cooldown;
+    this.cooldowns.slash = s.cd * this.cdMul();
     const baseDir = Phaser.Math.Angle.Between(p.x, p.y, target.body.center.x, target.body.center.y);
     const dirs = [baseDir];
     if ((s.count || 1) >= 2) dirs.push(baseDir + Math.PI); // 背后再斩
@@ -1201,6 +1299,7 @@ export default class GameScene extends Phaser.Scene {
   dropGem(x, y, tier) {
     const gem = this.add.image(x, y, `gem-${tier}`).setDepth(3);
     gem.xp = GEMS[tier].xp;
+    gem.tier = tier;
     gem.magnet = false;
     this.gems.add(gem);
   }
@@ -1635,3 +1734,5 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 }
+
+installZodiac(GameScene);

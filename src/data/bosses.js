@@ -9,7 +9,7 @@ export const BOSSES = {
     name: '野猪王', emoji: '🐗', art: 'boar', size: 84, boss: true,
     hp: 1400, speed: 100, damage: 24, gem: 'boss',
     skill: { type: 'charge', firstDelay: 2000, interval: 4500, triggerRange: 420, windup: 800, warnWidth: 70,
-      chargeDistance: 380, chargeSpeedMul: 3.5, chargeDamage: 30, knockback: 80, recover: 900 },
+      chargeDistance: 380, chargeSpeedMul: 3.5, chargeDamage: 30, dmgMul: 1.25, knockback: 80, debuff: { drowsy: { mul: 0.6, ms: 2000 } }, recover: 900 },
     fight: { clear: 'offscreen', pauseSpawnMs: 6000, fightSpawnMul: 0.6 },
     reward: { chest: 1, gems: { boss: 1, large: 4 }, vacuum: true, heal: 0 },
     killMsg: '击退野猪王！',
@@ -20,6 +20,8 @@ export const BOSSES = {
     skill: { type: 'summon', firstDelay: 3000, interval: 9000, windup: 600, summonType: 'wolf',
       summonCount: 4, summonCountPhase2: 5, phase2At: 0.5, summonRadius: 220, maxSummonAlive: 8,
       summonGem: 'small', despawnOnBossDeath: true },
+    // 狼王第二技能「冲咬」（衡岚 zodiac §2）：与 summon 共用 GCD 1000ms
+    zskill: { type: 'bossBite', name: '冲咬', range: 300, cd: 4000, firstDelay: 5000, windup: 500, warnWidth: 40, distance: 260, speedMul: 3.2, dmgMul: 1.2, knockback: 60, recover: 500, gcd: 1000, debuff: { vuln: { mul: 1.3, ms: 3000 } } },
     fight: { clear: 'offscreen', pauseSpawnMs: 5000, fightSpawnMul: 0.5 },
     reward: { chest: 2, gems: { boss: 1, large: 6 }, vacuum: true, heal: 30 },
     killMsg: '击退狼王！',
@@ -28,8 +30,8 @@ export const BOSSES = {
     name: '象王', emoji: '🐘', art: 'elephant', size: 120, boss: true,
     hp: 12000, speed: 85, damage: 40, gem: 'boss',
     skill: { type: 'stampede', firstDelay: 3000, interval: 7000, windup: 1200, warnWidth: 90,
-      chargeDistance: 650, chargeSpeedMul: 4.0, chargeDamage: 50, knockback: 120,
-      shockwaveRadius: 160, shockwaveDamage: 22, shockwaveWarn: 300, recover: 1000,
+      chargeDistance: 650, chargeSpeedMul: 4.0, chargeDamage: 50, dmgMul: 1.25, knockback: 120,
+      shockwaveRadius: 160, shockwaveDamage: 22, shockDmgMul: 0.55, fearRadius: 260, fear: { mul: 0.75, atk: 0.8, ms: 2000 }, shockwaveWarn: 300, recover: 1000,
       phase2At: 0.5, phase2Msg: '象王怒了！', phase2: { interval: 5000, windup: 1000, recover: 800 } },
     // 象王：只清屏外（不清全场），完整怪池
     fight: { clear: 'offscreen', pauseSpawnMs: 6000, fightSpawnMul: 0.4 },
