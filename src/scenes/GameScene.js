@@ -12,6 +12,7 @@ import { installZodiac } from '../systems/zodiac.js';
 import { createVirtualJoystick, createPauseButton, isTouchDevice } from '../ui/virtualJoystick.js';
 import { thumbZoneHeight } from '../layout.js';
 import { spawnIntervalMs, spawnCount, clampSpawnCount } from '../data/waves.js';
+import { preloadTerrain, placeTerrain, terrainFactor, magmaTick, magmaDmg, MAGMA_TICK_DMG, MAGMA_HURTS_ENEMIES } from '../systems/terrain.js';
 import { preloadObstacles, placeObstacles, bushFactor, nearHardObstacle, ySortDepth } from '../systems/obstacles.js';
 
 const MAX_ENEMIES = 300;
@@ -45,6 +46,7 @@ export default class GameScene extends Phaser.Scene {
 
   preload() {
     preloadArt(this); // 林绮动物 + 回旋镖/剑气 PNG
+    preloadTerrain(this); // 四地形贴图（缺图 fallback 色块）
     preloadObstacles(this); // 林绮障碍 PNG（public/assets/obstacles，base=/survivor/ 下相对路径）
   }
 
@@ -116,6 +118,7 @@ export default class GameScene extends Phaser.Scene {
 
     // 开局障碍：树/石硬碰（static group），灌木减速，草纯装饰
     placeObstacles(this, 0, 0);
+    placeTerrain(this); // 东熔浆/南沼泽/西河流(桥+浅滩)/北悬崖，悬崖并入 obstaclesHard
     this.physics.add.collider(this.player, this.obstaclesHard);
     this.physics.add.collider(this.enemies, this.obstaclesHard);
     this.physics.add.overlap(this.knives, this.enemies, this.onKnifeHit, null, this);
@@ -261,7 +264,10 @@ export default class GameScene extends Phaser.Scene {
     const footY = p.y + p.displayHeight / 2;
     const bush = bushFactor(this, p.x, footY);
     this.inBush = bush < 1;
-    const spd = this.stats.speed * bush * this.debuffSpeedMul(); // 灌木内临时减速 ×0.6，不改 stats.speed
+    const ter = terrainFactor(this, p.x, footY);
+    const envDmg = magmaTick(p, ter.magma, this.game.loop.delta, magmaDmg(this));
+    if (envDmg > 0) this.hurtPlayerEnv(envDmg);
+    const spd = this.stats.speed * Math.min(bush, ter.slowMul) * this.debuffSpeedMul(); // 灌木内临时减速 ×0.6，不改 stats.speed
     p.setVelocity(dir.x * spd, dir.y * spd);
     p.setDepth(ySortDepth(footY)); // 按脚底 y 排序，可走到树冠后
 
@@ -304,6 +310,15 @@ export default class GameScene extends Phaser.Scene {
     this.hurtFlash.setAlpha(0.28);
     this.tweens.killTweensOf(this.hurtFlash);
     this.tweens.add({ targets: this.hurtFlash, alpha: 0, duration: 260 });
+    if (this.stats.hp <= 0) this.gameOver();
+  }
+
+  // 环境伤（熔浆）：破 i-frame、不给 i-frame、不吃 defense，轻闪不震屏
+  hurtPlayerEnv(dmg) {
+    if (this.over) return;
+    this.stats.hp -= dmg;
+    this.player.setTintFill(0xff6d00);
+    this.hurtUntil = this.elapsed + 80;
     if (this.stats.hp <= 0) this.gameOver();
   }
 
@@ -418,7 +433,12 @@ export default class GameScene extends Phaser.Scene {
       const footY = e.y; // origin(0.5,1)：y 即脚底
       e.setDepth(ySortDepth(footY));
       let spd = (e.slowUntil && this.elapsed < e.slowUntil) ? e.speed * (e.slowFactor || 0.5) : e.speed;
-      if (!e.def.boss) spd *= bushFactor(this, e.x, footY); // 怪进灌木同样减速
+      const ter = terrainFactor(this, e.x, footY, !!e.def.boss);
+      spd *= Math.min(e.def.boss ? 1 : bushFactor(this, e.x, footY), ter.slowMul); // 灌木/沼泽/河流取 min
+      if (MAGMA_HURTS_ENEMIES && !e.def.boss) {
+        const d = magmaTick(e, ter.magma, this.game.loop.delta, MAGMA_TICK_DMG);
+        if (d > 0) { this.damageEnemy(e, d / (this.stats.damage || 1)); if (!e.active) continue; }
+      }
       this.runBehavior(e, p, spd);
       this.zTick(e, p);
       if (e.state !== 'windup' && Math.abs(e.body.velocity.x) > 5) this.setEnemyFlip(e, e.body.velocity.x < 0); // 贴图默认朝右
