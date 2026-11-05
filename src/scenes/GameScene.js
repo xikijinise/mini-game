@@ -1291,22 +1291,31 @@ export default class GameScene extends Phaser.Scene {
   playCleaveFx(p, dir, radius, half) {
     const fan = this.add.graphics().setDepth(9);
     fan.fillStyle(0xcdeef0, 0.2).slice(p.x, p.y, radius, dir - half, dir + half, false).fillPath();
-    this.tweens.add({ targets: fan, alpha: 0, duration: 260, onComplete: () => fan.destroy() });
+    this.tweens.add({ targets: fan, alpha: 0, duration: 320, onComplete: () => fan.destroy() });
     const sc = radius / 136;
+    const fullX = sc; // 满尺寸（c4acb5f 放大后）：长 sc、厚 max(3.2, sc×1.25)
+    const fullY = Math.max(3.2, sc * 1.25);
     const cx = Math.cos(dir);
     const cy = Math.sin(dir);
-    const fx = this.add.image(p.x + cx * radius * 0.15, p.y + cy * radius * 0.15, 'slash_01')
-      .setOrigin(1, 0.5).setRotation(dir).setDepth(9).setScale(sc, Math.max(3.2, sc * 1.25)) // 可欣 11-05：长 ≥2.2×、厚 ≥1.6× 扇斩
+    // 可欣 11-05：先小后大——从身侧出发，飞出途中长宽同步 0.4 → 0.85（中段）→ 1.0（末端），再淡出
+    const grow = (k) => 0.4 + 0.6 * (1 - (1 - k) * (1 - k));
+    const x0 = p.x + cx * 20;
+    const y0 = p.y + cy * 20;
+    const fx = this.add.image(x0, y0, 'slash_01')
+      .setOrigin(1, 0.5).setRotation(dir).setDepth(9).setScale(fullX * grow(0), fullY * grow(0))
       .setTint(0xb3e5fc);
     this.cameras.main.shake(90, 0.004);
-    this.tweens.add({
-      targets: fx, x: p.x + cx * radius * 1.1, y: p.y + cy * radius * 1.1, duration: 260, ease: 'Quad.easeOut',
+    this.tweens.addCounter({
+      from: 0, to: 1, duration: 380,
       onUpdate: (tw) => {
-        const k = tw.progress;
+        const k = tw.getValue();
+        const m = grow(k);
+        const d = 20 + (radius * 1.1 - 20) * k;
+        fx.setPosition(p.x + cx * d, p.y + cy * d).setScale(fullX * m, fullY * m);
         const key = k < 0.3 ? 'slash_01' : k < 0.75 ? 'slash' : 'slash_02';
         if (fx.texture.key !== key) fx.setTexture(key);
       },
-      onComplete: () => this.tweens.add({ targets: fx, alpha: 0, duration: 90, onComplete: () => fx.destroy() }),
+      onComplete: () => this.tweens.add({ targets: fx, alpha: 0, duration: 120, onComplete: () => fx.destroy() }),
     });
   }
 
