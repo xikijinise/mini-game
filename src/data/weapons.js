@@ -125,19 +125,20 @@ export const WEAPONS = {
   slash: {
     name: '剑气',
     icon: '⚔️',
+    // 可欣 11-05：Lv4 起三道（朝敌为轴 120° 均分）、Lv6 起四道十字；Lv8 起切大劈（单道窄长飞斩）
     levels: [
       { dmg: 10, cd: 1300, count: 1, arcDeg: 100, range: 110, knockback: 20 },
       { dmg: 10, cd: 1200, count: 2, arcDeg: 110, range: 115, knockback: 20 },
       { dmg: 14, cd: 1100, count: 2, arcDeg: 130, range: 125, knockback: 25 },
-      { dmg: 17, cd: 1000, count: 2, arcDeg: 140, range: 135, knockback: 25 },
-      { dmg: 22, cd: 900,  count: 2, arcDeg: 160, range: 150, knockback: 30 },
-      { dmg: 26, cd: 860,  count: 2, arcDeg: 165, range: 160, knockback: 32 },
-      { dmg: 30, cd: 820,  count: 2, arcDeg: 170, range: 170, knockback: 34 },
-      { dmg: 34, cd: 780,  count: 2, arcDeg: 175, range: 180, knockback: 36 },
-      { dmg: 40, cd: 740,  count: 2, arcDeg: 180, range: 190, knockback: 38 },
-      { dmg: 46, cd: 700,  count: 2, arcDeg: 180, range: 200, knockback: 40 },
+      { dmg: 16, cd: 1050, count: 3, arcDeg: 100, range: 130, knockback: 25 },
+      { dmg: 20, cd: 980,  count: 3, arcDeg: 110, range: 145, knockback: 28 },
+      { dmg: 22, cd: 920,  count: 4, arcDeg: 90,  range: 150, knockback: 30 },
+      { dmg: 26, cd: 860,  count: 4, arcDeg: 100, range: 165, knockback: 32 },
+      { dmg: 36, cd: 1000, count: 1, arcDeg: 55,  range: 260, knockback: 45, mode: 'cleave' },
+      { dmg: 44, cd: 920,  count: 1, arcDeg: 60,  range: 290, knockback: 50, mode: 'cleave' },
+      { dmg: 54, cd: 840,  count: 1, arcDeg: 70,  range: 320, knockback: 55, mode: 'cleave' },
     ],
-    desc: ['向前方挥出扇形剑气，斩击范围内所有敌人', '背后追加一道剑气', '伤害提升，斩击更宽', '伤害提升，攻速提升', '剑气大幅加宽加长，伤害与攻速提升', '伤害与射程提升', '斩击更宽，攻速提升', '伤害提升', '范围与伤害提升', '剑气拉满：伤害、射程与攻速大幅提升'],
+    desc: ['向前方挥出扇形剑气，斩击范围内所有敌人', '背后追加一道剑气（前后双斩）', '伤害提升，斩击更宽', '剑气增至三道，环身均分斩击', '三道剑气伤害与射程提升', '剑气增至四道，十字斩击', '四道剑气伤害、范围与攻速提升', '化为大剑气：向前猛劈一道窄长飞斩，伤害与射程大增', '大劈伤害与射程提升', '大劈拉满：伤害、射程与攻速大幅提升'],
   },
   spike: {
     name: '地刺',

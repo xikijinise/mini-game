@@ -1258,12 +1258,15 @@ export default class GameScene extends Phaser.Scene {
     }
     this.cooldowns.slash = s.cd * this.cdMul();
     const baseDir = Phaser.Math.Angle.Between(p.x, p.y, target.body.center.x, target.body.center.y);
-    const dirs = [baseDir];
-    if ((s.count || 1) >= 2) dirs.push(baseDir + Math.PI); // 背后再斩
+    const cleave = s.mode === 'cleave';
+    const n = cleave ? 1 : (s.count || 1);
+    const dirs = [];
+    for (let i = 0; i < n; i++) dirs.push(baseDir + (i * Math.PI * 2) / n); // 以朝敌为轴均分 360°：2 前后 / 3 120° / 4 十字
     const half = Phaser.Math.DegToRad(arcDeg) / 2;
     const hit = new Set();
     for (const dir of dirs) {
-      this.playSlashFx(p, dir, radius, half);
+      if (cleave) this.playCleaveFx(p, dir, radius, half);
+      else this.playSlashFx(p, dir, radius, half);
       for (const e of this.enemies.getChildren().slice()) {
         if (hit.has(e)) continue;
         const reach = radius + e.def.size * 0.3;
@@ -1284,6 +1287,29 @@ export default class GameScene extends Phaser.Scene {
 
   // 剑气表现（weapons/README）：slash_01 ~60ms → slash → slash_02 ~100ms 后销毁；弧头朝外（origin(1,0.5)）。
   // 底下垫一层很淡的扇形，标出实际判定 arc/range
+  // 大劈：同一套 slash 贴图沿 dir 拉长成窄长剑气，从身前飞向射程末端（短飞斩）；判定仍为窄长扇形
+  playCleaveFx(p, dir, radius, half) {
+    const fan = this.add.graphics().setDepth(9);
+    fan.fillStyle(0xcdeef0, 0.2).slice(p.x, p.y, radius, dir - half, dir + half, false).fillPath();
+    this.tweens.add({ targets: fan, alpha: 0, duration: 260, onComplete: () => fan.destroy() });
+    const sc = radius / 136;
+    const cx = Math.cos(dir);
+    const cy = Math.sin(dir);
+    const fx = this.add.image(p.x + cx * radius * 0.3, p.y + cy * radius * 0.3, 'slash_01')
+      .setOrigin(1, 0.5).setRotation(dir).setDepth(9).setScale(sc * 0.8, Phaser.Math.Clamp(Math.tan(half) * radius / 70, 1.2, 2.2))
+      .setTint(0xb3e5fc);
+    this.cameras.main.shake(70, 0.003);
+    this.tweens.add({
+      targets: fx, x: p.x + cx * radius, y: p.y + cy * radius, duration: 220, ease: 'Quad.easeOut',
+      onUpdate: (tw) => {
+        const k = tw.progress;
+        const key = k < 0.3 ? 'slash_01' : k < 0.75 ? 'slash' : 'slash_02';
+        if (fx.texture.key !== key) fx.setTexture(key);
+      },
+      onComplete: () => this.tweens.add({ targets: fx, alpha: 0, duration: 90, onComplete: () => fx.destroy() }),
+    });
+  }
+
   playSlashFx(p, dir, radius, half) {
     const fan = this.add.graphics().setDepth(9);
     fan.fillStyle(0xcdeef0, 0.22).slice(p.x, p.y, radius, dir - half, dir + half, false).fillPath();
