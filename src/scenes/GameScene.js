@@ -29,7 +29,8 @@ const TIER_MSG_COOLDOWN = 3000; // 升星提示冷却，期间同时升星的物
 const BEST_KEY = 'stickman-survivor-best-ms';
 const HUD_FONT = { fontFamily: FONT, fontSize: '20px', color: '#222222', fontStyle: 'bold' };
 
-const xpForLevel = (lv) => Math.max(1, Math.floor((5 + (lv - 1) * 5 + Math.pow(lv - 1, 1.6)) / 2));
+const WEAPON_STEP = 2; // 单次选卡 ≈ 旧两级
+const xpForLevel = (lv) => Math.max(1, Math.floor(5 + (lv - 1) * 5 + Math.pow(lv - 1, 1.6))); // 可欣 11-05：去 /2，升级变稀（约 2×）
 const formatTime = (ms) => {
   const s = Math.floor(ms / 1000);
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -1392,19 +1393,23 @@ export default class GameScene extends Phaser.Scene {
       if (lv <= 0) {
         pool.push({ kind: 'weapon', id, name: w.name, icon: w.icon, lv: 0, desc: w.desc[0] });
       } else if (lv < WEAPON_MAX_LEVEL) {
-        const desc = w.desc[Math.min(lv, w.desc.length - 1)] || '数值继续提升';
-        pool.push({ kind: 'weapon', id, name: w.name, icon: w.icon, lv, desc });
+        // 可欣 11-05：已有武器一次 +2 级（钳到 MAX），desc 拼两级要点
+        const to = Math.min(lv + WEAPON_STEP, WEAPON_MAX_LEVEL);
+        const parts = [];
+        for (let i = lv; i < to; i++) parts.push(w.desc[Math.min(i, w.desc.length - 1)] || '数值继续提升');
+        pool.push({ kind: 'weapon', id, name: w.name, icon: w.icon, lv, to, desc: [...new Set(parts)].join('；') });
       } else {
         // 10 级后仍可选：只加数值 + 变大/范围
-        const pctD = Math.round(WEAPON_OVER.dmgMul * 100);
-        const pctS = Math.round(WEAPON_OVER.sizeMul * 100);
+        const pctD = Math.round(WEAPON_OVER.dmgMul * WEAPON_STEP * 100);
+        const pctS = Math.round(WEAPON_OVER.sizeMul * WEAPON_STEP * 100);
         pool.push({
           kind: 'weapon',
           id,
           name: w.name,
           icon: w.icon,
           lv,
-          desc: `变大强化：伤害 +${pctD}%，体积/范围 +${pctS}%`,
+          to: lv + WEAPON_STEP,
+          desc: `变大强化 ×${WEAPON_STEP} 层：伤害 +${pctD}%，体积/范围 +${pctS}%`,
         });
       }
     }
@@ -1429,7 +1434,9 @@ export default class GameScene extends Phaser.Scene {
 
   applyChoice(c) {
     if (c.kind === 'weapon') {
-      this.weaponLv[c.id]++;
+      const lv = this.weaponLv[c.id];
+      // 新武器 Lv1；已有 +2（≤10 钳到 MAX）；满 10 后一次叠 2 层 WEAPON_OVER
+      this.weaponLv[c.id] = lv <= 0 ? 1 : lv < WEAPON_MAX_LEVEL ? Math.min(lv + WEAPON_STEP, WEAPON_MAX_LEVEL) : lv + WEAPON_STEP;
     } else if (c.kind === 'passive') {
       this.passiveLv[c.id]++;
       PASSIVES[c.id].apply(this.stats, this);

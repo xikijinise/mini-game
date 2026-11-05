@@ -6,7 +6,7 @@ const CARD_H = 260;
 const BASE_GAP = 14;
 const NEED = 2;
 
-const levelTag = (c) => (c.kind === 'food' ? '' : c.lv === 0 ? '新！' : `Lv ${c.lv} → ${c.lv + 1}`);
+const levelTag = (c) => (c.kind === 'food' ? '' : c.lv === 0 ? '新！' : `Lv ${c.lv} → ${c.to ?? c.lv + 1}`);
 
 // 升级面板：5 选 2。点选或按 1–5 切换选中，满 2 项后回调 onPick(selected[])
 // 返回 { relayout() }：旋转/视口变化时按新画布重排（保留已选项）
