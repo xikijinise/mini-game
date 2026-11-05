@@ -1292,18 +1292,18 @@ export default class GameScene extends Phaser.Scene {
     const fan = this.add.graphics().setDepth(9);
     fan.fillStyle(0xcdeef0, 0.2).slice(p.x, p.y, radius, dir - half, dir + half, false).fillPath();
     this.tweens.add({ targets: fan, alpha: 0, duration: 320, onComplete: () => fan.destroy() });
-    const sc = radius / 136;
-    const fullX = sc; // 满尺寸（c4acb5f 放大后）：长 sc、厚 max(3.2, sc×1.25)
-    const fullY = Math.max(3.2, sc * 1.25);
+    // 大劈 A 帧 heavy_* 480×160（按最大尺寸出图）：满尺寸长 ≈ range，厚按图比例 ×1.1
+    const fullX = radius / 480;
+    const fullY = fullX * 1.1;
     const cx = Math.cos(dir);
     const cy = Math.sin(dir);
     // 可欣 11-05：先小后大——从身侧出发，飞出途中长宽同步 0.4 → 0.85（中段）→ 1.0（末端），再淡出
     const grow = (k) => 0.4 + 0.6 * (1 - (1 - k) * (1 - k));
     const x0 = p.x + cx * 20;
     const y0 = p.y + cy * 20;
-    const fx = this.add.image(x0, y0, 'slash_01')
+    const fx = this.add.image(x0, y0, 'heavy_01')
       .setOrigin(1, 0.5).setRotation(dir).setDepth(9).setScale(fullX * grow(0), fullY * grow(0))
-      .setTint(0xb3e5fc);
+      ;
     this.cameras.main.shake(90, 0.004);
     this.tweens.addCounter({
       from: 0, to: 1, duration: 380,
@@ -1312,7 +1312,7 @@ export default class GameScene extends Phaser.Scene {
         const m = grow(k);
         const d = 20 + (radius * 1.1 - 20) * k;
         fx.setPosition(p.x + cx * d, p.y + cy * d).setScale(fullX * m, fullY * m);
-        const key = k < 0.3 ? 'slash_01' : k < 0.75 ? 'slash' : 'slash_02';
+        const key = k < 0.3 ? 'heavy_01' : k < 0.75 ? 'heavy' : 'heavy_02';
         if (fx.texture.key !== key) fx.setTexture(key);
       },
       onComplete: () => this.tweens.add({ targets: fx, alpha: 0, duration: 120, onComplete: () => fx.destroy() }),
@@ -1323,9 +1323,9 @@ export default class GameScene extends Phaser.Scene {
     const fan = this.add.graphics().setDepth(9);
     fan.fillStyle(0xcdeef0, 0.22).slice(p.x, p.y, radius, dir - half, dir + half, false).fillPath();
     this.tweens.add({ targets: fan, alpha: 0, duration: 200, onComplete: () => fan.destroy() });
-    const sc = radius / 136;
+    const sc = radius / 272; // A 帧 slash_* 272×72（旧 136×32 的 2×）
     const fx = this.add.image(p.x + Math.cos(dir) * radius * 0.55, p.y + Math.sin(dir) * radius * 0.55, 'slash_01')
-      .setOrigin(1, 0.5).setRotation(dir).setDepth(9).setScale(sc, Math.max(1, sc * 1.6));
+      .setOrigin(1, 0.5).setRotation(dir).setDepth(9).setScale(sc, Math.max(0.5, sc * 1.6));
     this.tweens.add({
       targets: fx, x: p.x + Math.cos(dir) * radius, y: p.y + Math.sin(dir) * radius, duration: 160,
       onUpdate: (tw) => {

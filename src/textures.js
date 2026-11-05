@@ -1,7 +1,7 @@
 import { ENEMIES, GEMS } from './data/enemies.js';
 import { BOSSES } from './data/bosses.js';
 
-export const WEAPON_ART = ['boomerang', 'slash', 'slash_01', 'slash_02'];
+export const WEAPON_ART = ['boomerang', 'slash', 'slash_01', 'slash_02', 'heavy', 'heavy_01', 'heavy_02']; // 剑气 A 帧（林绮 11-05）：扇斩 272×72，大劈 480×160
 
 // 林绮 PNG：动物（key = ENEMIES 的 key）+ 武器。路径相对 base（/survivor/）
 export function preloadArt(scene) {
