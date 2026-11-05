@@ -162,7 +162,35 @@ export default class GameScene extends Phaser.Scene {
       this.weaponLv.flail = 1;
       this.stats.hp = this.stats.maxHp = 9999;
       this.refreshOwnedBar();
-      this.flashMessage('作弊开启：冰锥/连射箭/回旋镖/剑气/地刺/链球 · HP 9999');
+      this.flashMessage('作弊开启：冰锥/连射箭/回旋镖/剑气/地刺/链球 · HP 9999 · L/「升」跳一级');
+      // 作弊跳级：桌面按 L、触屏点右下「升」→ 立刻升到下一整级并弹选卡（选卡/暂停/结束时不响应）
+      if (kb) {
+        kb.on('keydown-L', this.cheatLevelUp, this);
+        this.events.once('shutdown', () => kb.off('keydown-L', this.cheatLevelUp, this));
+      }
+      if (this.isTouch) {
+        const { width, height } = this.scale;
+        this.cheatLvBtn = this.add.text(width - 50, height - 60, '升', { ...HUD_FONT, fontSize: '26px', backgroundColor: '#00000066', padding: { x: 12, y: 8 } })
+          .setOrigin(0.5).setScrollFactor(0).setDepth(950).setAlpha(0.55).setInteractive({ useHandCursor: true });
+        this.cheatLvBtn.on('pointerdown', () => this.cheatLevelUp());
+        const place = () => { const { width: w, height: h } = this.scale; this.cheatLvBtn?.setPosition(w - 50, h - 60); };
+        this.scale.on('resize', place);
+        this.events.once('shutdown', () => this.scale.off('resize', place));
+      }
+    }
+    // 手验辅助：?lv=N（1～30）开局连升 N 级、连弹 N 次选卡（可与 cheat 同用，如 ?cheat=1&lv=8 验高阶剑气/大劈）
+    const lvm = typeof location !== 'undefined' && location.search.match(/[?&]lv=(\d+)/);
+    if (lvm) {
+      const n = Phaser.Math.Clamp(Number(lvm[1]), 0, 30);
+      if (n > 0) this.time.delayedCall(50, () => {
+        for (let i = 0; i < n; i++) {
+          this.level++;
+          this.xpNeed = xpForLevel(this.level);
+          this.pendingLevels++;
+        }
+        this.xp = 0;
+        if (!this.paused && !this.over) this.openLevelUp();
+      });
     }
     // 手验辅助：?t=145 从第 145 秒开局（配合 cheat 测 Boss）
     const tm = typeof location !== 'undefined' && location.search.match(/[?&]t=(\d+)/);
@@ -1379,6 +1407,12 @@ export default class GameScene extends Phaser.Scene {
       this.pendingLevels++;
     }
     if (this.pendingLevels > 0 && !this.paused) this.openLevelUp();
+  }
+
+  /** 作弊：直接补满到下一整级（选卡中/暂停/结束时忽略，防误触连冲） */
+  cheatLevelUp() {
+    if (this.paused || this.over || this.levelUpOpen) return;
+    this.gainXp(Math.max(1, this.xpNeed - this.xp));
   }
 
   // 一次升了好几级时，面板会连续弹几次
