@@ -1295,12 +1295,12 @@ export default class GameScene extends Phaser.Scene {
     const sc = radius / 136;
     const cx = Math.cos(dir);
     const cy = Math.sin(dir);
-    const fx = this.add.image(p.x + cx * radius * 0.3, p.y + cy * radius * 0.3, 'slash_01')
-      .setOrigin(1, 0.5).setRotation(dir).setDepth(9).setScale(sc * 0.8, Phaser.Math.Clamp(Math.tan(half) * radius / 70, 1.2, 2.2))
+    const fx = this.add.image(p.x + cx * radius * 0.15, p.y + cy * radius * 0.15, 'slash_01')
+      .setOrigin(1, 0.5).setRotation(dir).setDepth(9).setScale(sc, Math.max(3.2, sc * 1.25)) // 可欣 11-05：长 ≥2.2×、厚 ≥1.6× 扇斩
       .setTint(0xb3e5fc);
-    this.cameras.main.shake(70, 0.003);
+    this.cameras.main.shake(90, 0.004);
     this.tweens.add({
-      targets: fx, x: p.x + cx * radius, y: p.y + cy * radius, duration: 220, ease: 'Quad.easeOut',
+      targets: fx, x: p.x + cx * radius * 1.1, y: p.y + cy * radius * 1.1, duration: 260, ease: 'Quad.easeOut',
       onUpdate: (tw) => {
         const k = tw.progress;
         const key = k < 0.3 ? 'slash_01' : k < 0.75 ? 'slash' : 'slash_02';
